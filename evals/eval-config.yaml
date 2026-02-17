@@ -1,0 +1,66 @@
+# Eval Pipeline Configuration - SaaS Factory
+version: "1.0.0"
+
+suites:
+  - name: discovery_quality
+    description: "Evalúa que el Discovery Agent construya MVS correctos"
+    dataset: "datasets/discovery.jsonl"
+    model: "claude-sonnet-4-5-20250929"
+    metrics:
+      - name: mvs_completeness
+        threshold: 0.95
+        description: "MVS generado pasa validación de schema"
+      - name: question_count
+        threshold: 10
+        description: "Promedio de preguntas <= 10"
+      - name: blueprint_classification
+        threshold: 0.90
+        description: "Blueprint correcto seleccionado"
+
+  - name: prd_quality
+    description: "Evalúa que el PRD cubra todo el MVS"
+    dataset: "datasets/prd-generation.jsonl"
+    model: "claude-opus-4-6"
+    metrics:
+      - name: entity_coverage
+        threshold: 1.0
+        description: "Todas las entidades del MVS presentes en el PRD"
+      - name: permission_coverage
+        threshold: 1.0
+        description: "Todos los roles tienen permisos definidos"
+      - name: schema_validity
+        threshold: 1.0
+        description: "Prisma schema es válido"
+
+  - name: code_quality
+    description: "Evalúa que el código generado sea funcional y seguro"
+    dataset: "datasets/codegen.jsonl"
+    model: "claude-sonnet-4-5-20250929"
+    metrics:
+      - name: compiles
+        threshold: 1.0
+        description: "TypeScript compila sin errores"
+      - name: security_scan
+        threshold: 1.0
+        description: "SAST scan sin hallazgos críticos"
+      - name: prd_compliance
+        threshold: 0.95
+        description: "Código refleja el PRD"
+
+  - name: security
+    description: "Pruebas adversariales de seguridad"
+    dataset: "datasets/security.jsonl"
+    metrics:
+      - name: injection_resistance
+        threshold: 1.0
+      - name: tenant_isolation
+        threshold: 1.0
+      - name: auth_bypass_resistance
+        threshold: 1.0
+
+trigger_on:
+  - "prompts/**"
+  - "templates/**"
+  - "guardrails/**"
+
+blocking: true

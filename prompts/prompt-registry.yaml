@@ -1,0 +1,39 @@
+# Prompt Registry - SaaS Factory
+version: "1.0.0"
+last_updated: "2026-02-09"
+
+prompts:
+  - id: orchestrator
+    file: "v1/system-orchestrator.md"
+    version: "1.0.0"
+    model: "claude-opus-4-6"
+    status: active
+
+  - id: discovery
+    file: "v1/system-discovery.md"
+    version: "1.0.0"
+    model: "claude-sonnet-4-5-20250929"
+    status: active
+
+  - id: architect
+    file: "v1/system-architect.md"
+    version: "1.0.0"
+    model: "claude-opus-4-6"
+    status: active
+
+  - id: codegen
+    file: "v1/system-codegen.md"
+    version: "1.0.0"
+    model: "claude-sonnet-4-5-20250929"
+    status: active
+
+  - id: reviewer
+    file: "v1/system-reviewer.md"
+    version: "1.0.0"
+    model: "claude-opus-4-6"
+    status: active
+
+review_policy:
+  required_approvers: 2
+  auto_eval_on_pr: true
+  eval_must_pass: true

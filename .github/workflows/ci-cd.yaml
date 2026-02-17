@@ -1,0 +1,102 @@
+name: SaaS Factory CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - name: Validate MVS Schema
+        run: npx ajv validate -s specs/data-schemas/mvs-schema.json -d "tests/fixtures/*.json"
+      - name: Lint
+        run: npm run lint
+      - name: Type Check
+        run: npx tsc --noEmit
+
+  test:
+    runs-on: ubuntu-latest
+    needs: validate
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - name: Unit Tests
+        run: npm run test:unit
+      - name: Integration Tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+
+  evals:
+    runs-on: ubuntu-latest
+    needs: test
+    if: contains(github.event.pull_request.changed_files, 'prompts/') || contains(github.event.pull_request.changed_files, 'templates/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Eval Suite
+        run: python scripts/run_evals.py --suite core
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  security:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - name: SAST Scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/owasp-top-ten
+      - name: Dependency Scan
+        run: npm audit --audit-level=high
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & Push Docker Image
+        run: |
+          docker build -t saasfactory:${{ github.sha }} .
+          docker tag saasfactory:${{ github.sha }} registry/saasfactory:staging
+          docker push registry/saasfactory:staging
+      - name: Deploy to Staging
+        run: ./scripts/deploy.sh staging
+      - name: Smoke Tests
+        run: npm run test:smoke -- --env staging
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Canary Deploy (10%)
+        run: ./scripts/deploy.sh production --canary 10
+      - name: Monitor (5min)
+        run: sleep 300 && npm run test:smoke -- --env production
+      - name: Full Rollout
+        run: ./scripts/deploy.sh production --canary 100

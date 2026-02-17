@@ -1,0 +1,110 @@
+# Guardrails - Seguridad, Validación y Anti-Ambigüedad
+version: "1.0.0"
+
+# ── Input Sanitization ──
+input_sanitization:
+  mvs_validation:
+    max_entities: 50
+    max_fields_per_entity: 50
+    max_roles: 10
+    max_description_length: 500
+    blocked_entity_names: ["User", "Tenant", "Organization", "AuditLog", "Session"]
+    blocked_field_names: ["password", "secret", "token", "api_key"]
+    reason: "Estas entidades/campos son del sistema y se generan automáticamente"
+
+  prompt_injection_detection:
+    enabled: true
+    scan_fields: ["description", "display_name", "field.name"]
+    action: sanitize_and_log
+
+# ── Anti-Ambiguity Engine ──
+anti_ambiguity:
+  checks:
+    - id: orphan_entity
+      description: "Entidad sin relación con ninguna otra"
+      severity: warning
+      action: suggest_relation
+
+    - id: missing_permissions
+      description: "Entidad sin permisos definidos para algún rol"
+      severity: warning
+      action: apply_blueprint_defaults
+
+    - id: contradictory_billing
+      description: "billing_enabled=true pero no hay entidad con campo money"
+      severity: info
+      action: add_default_pricing_field
+
+    - id: workflow_incomplete
+      description: "Workflow con estados que no tienen transición de entrada"
+      severity: error
+      action: block_and_ask
+
+    - id: entity_self_reference
+      description: "Entidad con relación a sí misma sin clarificar tipo"
+      severity: warning
+      action: ask_clarification
+
+    - id: duplicate_field_names
+      description: "Dos campos con el mismo nombre en una entidad"
+      severity: error
+      action: block_and_report
+
+    - id: relation_target_missing
+      description: "Relación apunta a entidad que no existe en el MVS"
+      severity: error
+      action: block_and_report
+
+# ── Code Generation Security ──
+code_security:
+  enforced_patterns:
+    - "Todas las queries via Prisma (no raw SQL excepto RLS setup)"
+    - "Input validation con Zod en todo endpoint"
+    - "tenant_id en toda tabla de negocio"
+    - "RLS policies para toda tabla de negocio"
+    - "Parameterized queries únicamente"
+    - "CSRF tokens en formularios"
+    - "CSP headers configurados"
+    - "HttpOnly cookies para sessions"
+    - "Rate limiting middleware en todo API route"
+
+  blocked_patterns:
+    - pattern: "eval("
+      reason: "Code injection risk"
+    - pattern: "dangerouslySetInnerHTML"
+      reason: "XSS risk - usar sanitize-html si es necesario"
+    - pattern: "process.env.DATABASE_URL"
+      reason: "Usar config module, no acceso directo a env"
+
+  post_generation_scans:
+    - tool: semgrep
+      ruleset: "p/owasp-top-ten"
+      fail_on: error
+    - tool: "npm audit"
+      fail_on: high
+    - tool: eslint
+      config: "@typescript-eslint/recommended"
+      fail_on: error
+
+# ── Output Validation ──
+output_validation:
+  prd_must_include:
+    - database_schema
+    - api_routes (at least 1 per entity)
+    - permissions_matrix (all roles × all entities)
+    - ui_pages (at least list + detail per entity)
+    - seed_data
+
+  code_must_include:
+    - "prisma/schema.prisma"
+    - "src/middleware.ts"
+    - "src/lib/auth.ts"
+    - "src/lib/permissions.ts"
+    - "src/lib/tenant.ts"
+    - "Dockerfile"
+    - ".env.example"
+    - "README.md"
+
+  code_must_compile: true
+  code_must_build: true
+  docker_must_build: true

@@ -1,0 +1,68 @@
+# Industry Overlay Registry
+# Overlays que modifican blueprints para adaptarlos a una industria específica
+version: "1.0.0"
+
+overlays:
+  - id: healthcare
+    name: "Salud"
+    file: "healthcare.yaml"
+    status: complete
+    description: "Clínicas, consultorios, hospitales. Incluye compliance LFPDPPP para datos médicos."
+
+  - id: retail
+    name: "Retail / Comercio"
+    file: "retail.yaml"
+    status: complete
+    description: "Tiendas, e-commerce, POS. Incluye SKU, facturación CFDI, impuestos."
+
+  - id: education
+    name: "Educación"
+    file: null
+    status: planned
+    description: "Escuelas, universidades, academias. Periodos académicos, calificaciones, asistencia."
+
+  - id: real_estate
+    name: "Inmobiliaria"
+    file: null
+    status: planned
+    description: "Propiedades, contratos, comisiones, portales de búsqueda."
+
+  - id: hospitality
+    name: "Hospitalidad"
+    file: null
+    status: planned
+    description: "Hoteles, restaurantes, turismo. Reservas, check-in/out, temporadas."
+
+  - id: finance
+    name: "Finanzas"
+    file: null
+    status: planned
+    description: "Contabilidad, inversiones, seguros. KYC, compliance regulatorio."
+
+  - id: logistics
+    name: "Logística"
+    file: null
+    status: planned
+    description: "Envíos, rutas, flotillas, tracking GPS, guías de envío."
+
+  - id: legal
+    name: "Legal"
+    file: null
+    status: planned
+    description: "Despachos, expedientes legales, gestión de casos, contratos."
+
+  - id: manufacturing
+    name: "Manufactura"
+    file: null
+    status: planned
+    description: "Producción, BOM, control de calidad, mantenimiento preventivo."
+
+  - id: general
+    name: "General"
+    file: null
+    status: not_needed
+    description: "Sin overlay específico. Usa el blueprint tal cual."
+
+# Nota: Los overlays marcados como 'planned' se generan dinámicamente
+# usando el Architect Agent cuando el usuario selecciona esa industria.
+# Los overlays 'complete' tienen archivo YAML con modificaciones predefinidas.

@@ -1,0 +1,109 @@
+# Pipeline de Generación - Configuración
+version: "1.0.0"
+
+stages:
+  - id: validate_mvs
+    name: "Validar MVS"
+    type: automated
+    input: mvs_json
+    output: validated_mvs
+    timeout_seconds: 30
+    checks:
+      - json_schema_validation
+      - entity_graph_connected
+      - no_contradictions
+      - plan_limits_check
+    on_failure: reject_with_errors
+
+  - id: generate_prd
+    name: "Generar PRD"
+    type: ai_agent
+    agent: architect
+    model: claude-opus-4-6
+    input: validated_mvs + blueprint + industry_overlay
+    output: prd_json
+    validation:
+      - all_mvs_entities_present
+      - all_roles_have_permissions
+      - schema_is_valid_prisma
+    timeout_seconds: 120
+    on_failure: retry_with_feedback (max 3)
+
+  - id: generate_design
+    name: "Generar Diseño Técnico"
+    type: ai_agent
+    agent: architect
+    model: claude-opus-4-6
+    input: prd_json
+    output: design_document
+    timeout_seconds: 120
+    on_failure: retry_with_feedback (max 3)
+
+  - id: generate_code
+    name: "Generar Código"
+    type: ai_agent
+    agent: codegen
+    model: claude-sonnet-4-5-20250929
+    input: design_document + scaffold_templates
+    output: source_code
+    parallel_modules:
+      - {module: database, files: ["prisma/schema.prisma", "prisma/seed.ts"]}
+      - {module: api, files: ["src/app/api/v1/**"]}
+      - {module: frontend, files: ["src/app/(dashboard)/**", "src/components/**"]}
+      - {module: auth, files: ["src/lib/auth.ts", "src/middleware.ts"]}
+    sequential_modules:
+      - {module: billing, files: ["src/lib/billing.ts"]}
+      - {module: config, files: ["package.json", "next.config.ts", ".env.example"]}
+    timeout_seconds: 300
+    on_failure: retry_failed_module (max 3)
+
+  - id: validate_code
+    name: "Validar Código"
+    type: automated + ai_review
+    checks:
+      - typescript_compiles
+      - eslint_passes
+      - prisma_validates
+      - docker_builds
+      - sast_scan_clean
+      - dependency_scan_clean
+    ai_review:
+      agent: reviewer
+      model: claude-opus-4-6
+      checks: [prd_compliance, security_patterns, code_quality]
+    on_failure: retry_codegen (max 3)
+    timeout_seconds: 180
+
+  - id: deploy
+    name: "Desplegar"
+    type: automated
+    steps:
+      - build_docker_image
+      - push_to_registry
+      - provision_database
+      - run_migrations
+      - run_seed
+      - deploy_container
+      - configure_domain
+      - provision_ssl
+      - health_check
+      - smoke_test
+    timeout_seconds: 300
+    on_failure: rollback_and_notify
+
+  - id: configure_billing
+    name: "Configurar Billing"
+    type: automated
+    condition: mvs.billing_enabled == true
+    steps:
+      - create_stripe_products
+      - create_stripe_prices
+      - configure_webhooks
+      - verify_billing_flow
+    timeout_seconds: 60
+    on_failure: skip_and_notify_manual_setup
+
+notifications:
+  on_stage_complete: websocket_to_client
+  on_generation_complete: email + in_app
+  on_generation_failed: email + slack_alert

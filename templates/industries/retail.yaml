@@ -1,0 +1,39 @@
+# Industry Overlay: Retail
+id: retail
+name: "Retail / Comercio"
+version: "1.0.0"
+
+entity_modifications:
+  Product:
+    extra_fields:
+      - {name: "sku", type: "string", required: true, unique: true, display_name: "SKU"}
+      - {name: "barcode", type: "string", display_name: "Código de barras"}
+      - {name: "tax_rate", type: "decimal", default_value: 16.0, display_name: "Tasa de impuesto (%)"}
+      - {name: "weight_kg", type: "decimal", display_name: "Peso (kg)"}
+  Client:
+    extra_fields:
+      - {name: "rfc", type: "string", display_name: "RFC"}
+      - {name: "billing_address", type: "text", display_name: "Dirección fiscal"}
+  Invoice:
+    extra_fields:
+      - {name: "cfdi_uuid", type: "string", display_name: "UUID CFDI"}
+      - {name: "cfdi_status", type: "enum", options: ["Vigente", "Cancelado"], display_name: "Estado CFDI"}
+
+terminology:
+  "Item": "Artículo"
+  "Listing": "Producto"
+  "Order": "Pedido"
+  "Cart": "Carrito"
+
+compliance_defaults: [lfpdppp]
+compliance_rules:
+  - rule: "Facturación electrónica CFDI 4.0 para México"
+    implementation: "Integración con PAC (proveedor de certificación)"
+  - rule: "Retención de facturas por 5 años"
+    implementation: "soft_delete con retención extendida"
+
+ui_patterns:
+  - pattern: "product_catalog"
+    description: "Vista de grid con imágenes de productos"
+  - pattern: "pos_interface"
+    description: "Interfaz de punto de venta simplificada"

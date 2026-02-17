@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://saas:saas@postgres:5432/saasfactory
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-supersecret-change-me}
+      - NEXTAUTH_URL=http://localhost:3000
+      - GENERATED_APPS_PATH=/app/generated
+      - DEPLOY_BASE_PORT=4000
+      - NODE_ENV=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - generated-code:/app/generated
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: saasfactory
+      POSTGRES_USER: saas
+      POSTGRES_PASSWORD: saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saas -d saasfactory"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build: .
+    command: sh -c "npx prisma generate && npx tsx workers/generation-worker.ts"
+    environment:
+      - DATABASE_URL=postgresql://saas:saas@postgres:5432/saasfactory
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GENERATED_APPS_PATH=/app/generated
+      - DEPLOY_BASE_PORT=4000
+      - NODE_ENV=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - generated-code:/app/generated
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  pgdata:
+  redisdata:
+  generated-code:

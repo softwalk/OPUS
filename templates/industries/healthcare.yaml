@@ -1,0 +1,53 @@
+# Industry Overlay: Healthcare
+id: healthcare
+name: "Salud"
+version: "1.0.0"
+
+# Campos adicionales que se inyectan en entidades cuando la industria es healthcare
+entity_modifications:
+  Patient:
+    extra_fields:
+      - {name: "blood_type", type: "enum", options: ["A+","A-","B+","B-","AB+","AB-","O+","O-"], display_name: "Tipo de sangre"}
+      - {name: "allergies", type: "text", display_name: "Alergias conocidas"}
+      - {name: "insurance_provider", type: "string", display_name: "Aseguradora"}
+      - {name: "insurance_number", type: "string", display_name: "Número de póliza"}
+      - {name: "emergency_contact", type: "string", display_name: "Contacto de emergencia"}
+      - {name: "emergency_phone", type: "phone", display_name: "Teléfono de emergencia"}
+  
+  Client:
+    rename_to: "Patient"
+    rename_display: "Paciente"
+
+# Terminología: renombra labels en la UI
+terminology:
+  "Client": "Paciente"
+  "Service": "Servicio Médico"
+  "Booking": "Cita"
+  "Provider": "Médico"
+  "Notes": "Notas Clínicas"
+
+# Compliance por defecto para esta industria
+compliance_defaults:
+  - lfpdppp
+  
+compliance_rules:
+  - rule: "Datos médicos requieren consentimiento explícito del paciente"
+    implementation: "consent_checkbox en formulario de registro"
+  - rule: "Expedientes deben ser accesibles solo por personal autorizado"
+    implementation: "RLS + field-level permissions en datos sensibles"
+  - rule: "Audit trail de todo acceso a expedientes"
+    implementation: "audit_log con read tracking para entidades médicas"
+  - rule: "Retención mínima de expedientes: 5 años"
+    implementation: "soft_delete con retención extendida"
+
+# UI patterns específicos
+ui_patterns:
+  - pattern: "patient_timeline"
+    description: "Vista de timeline con todas las consultas del paciente"
+    applies_to: "Patient detail page"
+  - pattern: "vital_signs_chart"
+    description: "Gráfica de signos vitales en el tiempo"
+    applies_to: "Patient detail page"
+  - pattern: "prescription_print"
+    description: "Receta imprimible con formato médico estándar"
+    applies_to: "Prescription detail"

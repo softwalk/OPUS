@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ══════════════════════════════════════════
+// PLATFORM SCHEMA - SaaS Factory
+// ══════════════════════════════════════════
+
+model Organization {
+  id                    String    @id @default(uuid()) @db.Uuid
+  name                  String
+  slug                  String    @unique
+  plan                  Plan      @default(FREE)
+  stripeCustomerId      String?   @map("stripe_customer_id")
+  stripeSubscriptionId  String?   @map("stripe_subscription_id")
+  settings              Json      @default("{}")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  users        User[]
+  apps         App[]
+  auditLogs    AuditLog[]
+  usageMetrics UsageMetric[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  email        String    @unique
+  name         String
+  role         OrgRole   @default(MEMBER)
+  authProvider String    @default("email") @map("auth_provider")
+  passwordHash String?   @map("password_hash")
+  mfaEnabled   Boolean   @default(false) @map("mfa_enabled")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model App {
+  id                 String    @id @default(uuid()) @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  name               String
+  slug               String
+  blueprintId        String    @map("blueprint_id")
+  industryOverlay    String?   @map("industry_overlay")
+  mvs                Json
+  prd                Json?
+  status             AppStatus @default(DRAFT)
+  deployUrl          String?   @map("deploy_url")
+  deployPort         Int?      @map("deploy_port")
+  containerId        String?   @map("container_id")
+  deployConfig       Json      @default("{}") @map("deploy_config")
+  generationMetadata Json      @default("{}") @map("generation_metadata")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  generations  Generation[]
+
+  @@unique([orgId, slug])
+  @@map("apps")
+}
+
+model Generation {
+  id              String           @id @default(uuid()) @db.Uuid
+  appId           String           @map("app_id") @db.Uuid
+  mvsSnapshot     Json             @map("mvs_snapshot")
+  status          GenerationStatus @default(PENDING)
+  stage           String?
+  logs            Json             @default("[]")
+  costUsd         Decimal?         @map("cost_usd") @db.Decimal(10, 4)
+  tokensUsed      Int?             @map("tokens_used")
+  durationSeconds Int?             @map("duration_seconds")
+  errorMessage    String?          @map("error_message")
+  startedAt       DateTime?        @map("started_at")
+  completedAt     DateTime?        @map("completed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@map("generations")
+}
+
+model Blueprint {
+  id          String  @id
+  name        String
+  description String?
+  category    String
+  entities    Json
+  flows       Json    @default("[]")
+  uiPatterns  Json    @default("[]") @map("ui_patterns")
+  isPremium   Boolean @default(false) @map("is_premium")
+  version     String  @default("1.0.0")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("blueprints")
+}
+
+model IndustryOverlay {
+  id                    String  @id
+  name                  String
+  description           String?
+  entityModifications   Json    @default("{}") @map("entity_modifications")
+  complianceRequirements Json   @default("[]") @map("compliance_requirements")
+  terminology           Json    @default("{}")
+  isPremium             Boolean @default(false) @map("is_premium")
+  version               String  @default("1.0.0")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@map("industry_overlays")
+}
+
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  orgId        String?  @map("org_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  details      Json     @default("{}")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([resourceType, resourceId])
+  @@map("audit_log")
+}
+
+model UsageMetric {
+  id          BigInt   @id @default(autoincrement())
+  orgId       String   @map("org_id") @db.Uuid
+  metricName  String   @map("metric_name")
+  value       Decimal  @db.Decimal
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, periodStart])
+  @@map("usage_metrics")
+}
+
+// ══════════════════════════════════════════
+// ENUMS
+// ══════════════════════════════════════════
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum AppStatus {
+  DRAFT
+  GENERATING
+  GENERATED
+  DEPLOYING
+  DEPLOYED
+  ERROR
+  ARCHIVED
+}
+
+enum GenerationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}

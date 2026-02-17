@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SaaS Factory Output Schemas",
+  "description": "Schemas para validar outputs del pipeline de generación",
+
+  "schemas": {
+    "prd": {
+      "type": "object",
+      "required": ["prd_version", "app_name", "database_schema", "api_routes", "permissions_matrix", "ui_pages"],
+      "properties": {
+        "prd_version": { "type": "string" },
+        "app_name": { "type": "string" },
+        "database_schema": {
+          "type": "object",
+          "required": ["prisma_schema"],
+          "properties": {
+            "prisma_schema": { "type": "string", "minLength": 100 },
+            "rls_policies": { "type": "array", "items": { "type": "object" } },
+            "indexes": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "api_routes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["method", "path", "auth_required"],
+            "properties": {
+              "method": { "type": "string", "enum": ["GET", "POST", "PATCH", "DELETE"] },
+              "path": { "type": "string", "pattern": "^/api/v1/" },
+              "auth_required": { "type": "boolean" },
+              "permissions": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "permissions_matrix": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["create", "read", "update", "delete"] }
+            }
+          }
+        },
+        "ui_pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "type", "entity"],
+            "properties": {
+              "path": { "type": "string" },
+              "type": { "type": "string", "enum": ["list", "detail", "form", "dashboard"] },
+              "entity": { "type": "string" }
+            }
+          }
+        },
+        "workflows": { "type": "array" },
+        "billing_config": { "type": "object" },
+        "seed_data": { "type": "object" }
+      }
+    },
+
+    "codegen_output": {
+      "type": "object",
+      "required": ["files"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "content"],
+            "properties": {
+              "path": { "type": "string", "minLength": 3 },
+              "content": { "type": "string", "minLength": 10 }
+            }
+          }
+        }
+      }
+    },
+
+    "review_result": {
+      "type": "object",
+      "required": ["review_status", "critical_count", "error_count", "issues"],
+      "properties": {
+        "review_status": { "type": "string", "enum": ["pass", "fail"] },
+        "critical_count": { "type": "integer", "minimum": 0 },
+        "error_count": { "type": "integer", "minimum": 0 },
+        "warning_count": { "type": "integer", "minimum": 0 },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["severity", "category", "message"],
+            "properties": {
+              "severity": { "type": "string", "enum": ["critical", "error", "warning", "info"] },
+              "category": { "type": "string", "enum": ["security", "compliance", "quality"] },
+              "file": { "type": "string" },
+              "line": { "type": "integer" },
+              "message": { "type": "string" },
+              "fix_suggestion": { "type": "string" }
+            }
+          }
+        },
+        "summary": { "type": "string" }
+      }
+    }
+  }
+}
