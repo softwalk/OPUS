@@ -5,12 +5,22 @@
  */
 
 /**
- * Convert a display amount to centavos
- * @param {number} amount - Amount in display format (e.g. 120.00)
+ * Convert a display amount to centavos.
+ * Uses string-based rounding to avoid floating-point precision issues.
+ * e.g. toCents(19.99) === 1999 (not 1998 or 2000)
+ *
+ * @param {number|string} amount - Amount in display format (e.g. 120.00)
  * @returns {number} Amount in centavos (e.g. 12000)
  */
 export function toCents(amount) {
-  return Math.round(amount * 100);
+  if (amount == null || isNaN(amount)) return 0;
+  // Convert to string with 2 decimal places to avoid floating-point drift
+  // e.g. 0.1 + 0.2 = 0.30000000000000004 → "0.30" → 30
+  const str = Number(amount).toFixed(2);
+  const [whole, frac = '00'] = str.split('.');
+  const sign = str.startsWith('-') ? -1 : 1;
+  const absWhole = whole.replace('-', '');
+  return sign * (parseInt(absWhole, 10) * 100 + parseInt(frac.padEnd(2, '0').slice(0, 2), 10));
 }
 
 /**

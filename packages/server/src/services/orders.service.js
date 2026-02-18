@@ -1499,14 +1499,13 @@ export async function loginCliente(client, { telefono, nombre = null, tenantId }
 
   if (existing) {
     // Update name if provided and different
-    if (nombre && nombre !== existing.nombre) {
-      await client.query(
-        `UPDATE sesiones_cliente SET nombre = $1 WHERE id = $2`,
-        [nombre, existing.id]
-      );
-    }
-
     const token = crypto.randomUUID();
+
+    // SECURITY FIX: Persist the token in the session record for later validation
+    await client.query(
+      `UPDATE sesiones_cliente SET token = $1, nombre = COALESCE($2, nombre), updated_at = NOW() WHERE id = $3`,
+      [token, nombre, existing.id]
+    );
 
     return {
       session_id: existing.id,
@@ -1520,11 +1519,12 @@ export async function loginCliente(client, { telefono, nombre = null, tenantId }
   const token = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
+  // SECURITY FIX: Store the token in the session record
   const { rows: [session] } = await client.query(
-    `INSERT INTO sesiones_cliente (tenant_id, telefono, nombre, verificado, expires_at)
-     VALUES ($1, $2, $3, false, $4)
+    `INSERT INTO sesiones_cliente (tenant_id, telefono, nombre, verificado, token, expires_at)
+     VALUES ($1, $2, $3, false, $4, $5)
      RETURNING *`,
-    [tenantId, telefono, nombre, expiresAt]
+    [tenantId, telefono, nombre, token, expiresAt]
   );
 
   logger.info('Sesion cliente creada', { tenantId, telefono, sessionId: session.id });

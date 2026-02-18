@@ -682,6 +682,22 @@ export async function elaborar(client, {
     for (const ing of receta) {
       const cantDescontar = parseFloat(ing.cantidad) * porciones;
 
+      // SECURITY: Lock row with FOR UPDATE to prevent concurrent race conditions
+      const { rows: [stockRow] } = await client.query(
+        `SELECT cantidad FROM existencias
+         WHERE producto_id = $1 AND almacen_id = $2
+         FOR UPDATE`,
+        [ing.insumo_id, almacenReal]
+      );
+
+      // Validate stock before deducting (prevent negative inventory)
+      const currentStock = stockRow ? parseFloat(stockRow.cantidad) : 0;
+      if (currentStock < cantDescontar) {
+        throw Object.assign(new Error(
+          `Stock insuficiente de ${ing.insumo_nombre || ing.insumo_id}: disponible ${currentStock}, requerido ${cantDescontar}`
+        ), { status: 409, code: 'STOCK_INSUFFICIENT' });
+      }
+
       // Deduct from existencias
       await client.query(
         `UPDATE existencias
@@ -705,8 +721,8 @@ export async function elaborar(client, {
     await client.query(
       `INSERT INTO existencias (tenant_id, producto_id, almacen_id, cantidad)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (producto_id, almacen_id)
-       DO UPDATE SET cantidad = existencias.cantidad + $4, updated_at = NOW()`,
+       ON CONFLICT (tenant_id, producto_id, almacen_id)
+       DO UPDATE SET cantidad = existencias.cantidad + EXCLUDED.cantidad, updated_at = NOW()`,
       [tenantId, productoId, almacenReal, porciones]
     );
 
@@ -777,7 +793,7 @@ export async function elaborar(client, {
  */
 export async function listModificadores(client, productoId) {
   const { rows } = await client.query(
-    `SELECT * FROM modificadores WHERE producto_id = $1 ORDER BY nombre`,
+    `SELECT * FROM modificadores_producto WHERE producto_id = $1 ORDER BY nombre`,
     [productoId]
   );
   return rows;
@@ -796,7 +812,7 @@ export async function listModificadores(client, productoId) {
  */
 export async function addModificador(client, { productoId, nombre, precio_extra = 0, tenantId }) {
   const { rows: [modificador] } = await client.query(
-    `INSERT INTO modificadores (tenant_id, producto_id, nombre, precio_extra)
+    `INSERT INTO modificadores_producto (tenant_id, producto_id, nombre, precio_extra)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
     [tenantId, productoId, nombre, precio_extra]
@@ -820,7 +836,7 @@ export async function addModificador(client, { productoId, nombre, precio_extra 
  */
 export async function deleteModificador(client, modificadorId) {
   const { rowCount } = await client.query(
-    `DELETE FROM modificadores WHERE id = $1`,
+    `DELETE FROM modificadores_producto WHERE id = $1`,
     [modificadorId]
   );
 

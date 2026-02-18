@@ -133,13 +133,11 @@ export async function abrirMesa(client, {
       [personas, meseroId, mesaId]
     );
 
-    // 2. Generate folio: YYMMDD-HHMMSS (unique enough per-second per-tenant)
-    const folio = `TO_CHAR(NOW(), 'YYMMDD-HH24MISS')`;
-
+    // 2. Generate folio using SQL TO_CHAR (executed as SQL expression, not string literal)
     // 3. Insert cuenta
     const { rows: [cuenta] } = await client.query(
       `INSERT INTO cuentas (tenant_id, mesa_id, mesero_id, personas, estado, folio, abierta_en)
-       VALUES ($1, $2, $3, $4, 'abierta', ${folio}, NOW())
+       VALUES ($1, $2, $3, $4, 'abierta', TO_CHAR(NOW(), 'YYMMDD-HH24MISS'), NOW())
        RETURNING id, folio`,
       [tenantId, mesaId, meseroId, personas]
     );
@@ -684,6 +682,14 @@ export async function cobrar(client, {
 
         for (const ing of receta) {
           const cantDescontar = parseFloat(ing.cant_receta) * parseFloat(consumo.cantidad);
+
+          // SECURITY: Lock row to prevent concurrent race condition on stock
+          await client.query(
+            `SELECT id FROM existencias
+             WHERE producto_id = $1 AND almacen_id = $2
+             FOR UPDATE`,
+            [ing.insumo_id, almacenId]
+          );
 
           // Deduct from existencias
           await client.query(

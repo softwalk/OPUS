@@ -31,7 +31,26 @@ export function initWebSocket(server) {
         return;
       }
 
-      const token = url.searchParams.get('token');
+      // SECURITY: Prefer token from Sec-WebSocket-Protocol header
+      // Fallback: URL query param (legacy — less secure, visible in server logs)
+      const protocols = request.headers['sec-websocket-protocol'];
+      let token = null;
+
+      if (protocols) {
+        // Token sent as subprotocol: "access_token, <jwt>"
+        const parts = protocols.split(',').map(s => s.trim());
+        const tokenIdx = parts.indexOf('access_token');
+        if (tokenIdx !== -1 && parts[tokenIdx + 1]) {
+          token = parts[tokenIdx + 1];
+        }
+      }
+
+      if (!token) {
+        token = url.searchParams.get('token');
+        if (token) {
+          logger.warn('WebSocket: token via URL query param (deprecated). Use Sec-WebSocket-Protocol header.');
+        }
+      }
 
       if (!token) {
         logger.warn('WebSocket connection rejected: no token');
@@ -127,12 +146,10 @@ export function initWebSocket(server) {
       });
     });
 
-    // Send welcome message
+    // Send welcome message (SECURITY: don't leak tenantId to client)
     ws.send(JSON.stringify({
       type: 'connected',
       ts: Date.now(),
-      userId: ws.userId,
-      tenantId: ws.tenantId,
     }));
   });
 

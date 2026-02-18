@@ -304,11 +304,11 @@ export async function getCompra(client, compraId) {
  * @param {string} params.tenantId
  */
 export async function createCompra(client, { proveedor_id, fecha_entrega, notas, lineas, tenantId }) {
-  // Generate folio
-  const { rows: [{ count }] } = await client.query(
-    `SELECT COUNT(*)::integer AS count FROM ordenes_compra`
+  // Generate folio using sequence (CONCURRENCY-SAFE: prevents duplicate folios)
+  const { rows: [{ nextval }] } = await client.query(
+    `SELECT nextval('seq_folio_oc')`
   );
-  const folio = `OC-${String(count + 1).padStart(5, '0')}`;
+  const folio = `OC-${String(nextval).padStart(5, '0')}`;
 
   // Calculate total
   const total = lineas.reduce((sum, l) => sum + Math.round(l.cantidad * l.precio_unitario), 0);
@@ -408,13 +408,14 @@ export async function recibirCompra(client, compraId, { almacen_id, tenantId, us
     ]
   );
 
-  // 6. Audit
+  // 6. Audit (FIXED: use correct schema matching audit.service.js)
   await createAuditEntry(client, {
     tenantId,
-    tabla: 'ordenes_compra',
-    registro_id: compraId,
-    accion: 'recepcion_oc',
-    datos_nuevos: { estado: 'recibida', lineas: lineas.length },
+    tipo: 'recepcion_oc',
+    entidad: 'ordenes_compra',
+    entidadId: compraId,
+    descripcion: `OC ${oc.folio} recibida — ${lineas.length} líneas ingresadas`,
+    datos: { estado: 'recibida', lineas: lineas.length },
     usuario,
     ip,
   });
@@ -562,13 +563,14 @@ export async function abonarCxC(client, cxcId, { monto, tenantId, usuario, ip })
     [tenantId, `Abono CxC - ${cxc.cliente_nombre}`, monto, `CxC-${cxcId}`]
   );
 
-  // Audit
+  // Audit (FIXED: use correct schema matching audit.service.js)
   await createAuditEntry(client, {
     tenantId,
-    tabla: 'cuentas_cobrar',
-    registro_id: cxcId,
-    accion: 'abono_cxc',
-    datos_nuevos: { monto_abono: monto, saldo_anterior: cxc.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
+    tipo: 'abono_cxc',
+    entidad: 'cuentas_cobrar',
+    entidadId: cxcId,
+    descripcion: `Abono CxC — ${cxc.cliente_nombre}: $${(monto / 100).toFixed(2)}`,
+    datos: { monto_abono: monto, saldo_anterior: cxc.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
     usuario,
     ip,
   });
@@ -664,13 +666,14 @@ export async function abonarCxP(client, cxpId, { monto, tenantId, usuario, ip })
     [tenantId, `Pago CxP - ${cxp.proveedor_nombre}`, monto, `CxP-${cxpId}`]
   );
 
-  // Audit
+  // Audit (FIXED: use correct schema matching audit.service.js)
   await createAuditEntry(client, {
     tenantId,
-    tabla: 'cuentas_pagar',
-    registro_id: cxpId,
-    accion: 'abono_cxp',
-    datos_nuevos: { monto_abono: monto, saldo_anterior: cxp.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
+    tipo: 'abono_cxp',
+    entidad: 'cuentas_pagar',
+    entidadId: cxpId,
+    descripcion: `Pago CxP — ${cxp.proveedor_nombre}: $${(monto / 100).toFixed(2)}`,
+    datos: { monto_abono: monto, saldo_anterior: cxp.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
     usuario,
     ip,
   });
@@ -734,11 +737,11 @@ export async function listFacturas(client, { page = 1, limit = 50, desde, hasta 
  * Create a factura.
  */
 export async function createFactura(client, { cliente_id, cuenta_id, subtotal, iva, total, tenantId }) {
-  // Generate folio
-  const { rows: [{ count }] } = await client.query(
-    `SELECT COUNT(*)::integer AS count FROM facturas`
+  // Generate folio using sequence (CONCURRENCY-SAFE: prevents duplicate folios)
+  const { rows: [{ nextval }] } = await client.query(
+    `SELECT nextval('seq_folio_factura')`
   );
-  const folio = `F-${String(count + 1).padStart(6, '0')}`;
+  const folio = `F-${String(nextval).padStart(6, '0')}`;
 
   const { rows: [factura] } = await client.query(
     `INSERT INTO facturas (tenant_id, folio, cliente_id, cuenta_id, subtotal, iva, total)

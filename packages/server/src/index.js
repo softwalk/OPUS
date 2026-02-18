@@ -36,11 +36,22 @@ const PORT = config.port;
 // ==========================================
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 
-// Rate limiting (L2 security layer)
+// Rate limiting — General API (L2 security layer)
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
@@ -50,11 +61,20 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Stricter rate limit for auth (relaxed in dev for testing)
+// Rate limiting — Auth endpoints (stricter, relaxed in dev)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: config.env === 'development' ? 100 : 20,
   message: { error: { code: 'RATE_LIMITED', message: 'Demasiados intentos de login. Espera 15 minutos.' } },
+});
+
+// Rate limiting — Public endpoints (orders, reservations, client login)
+const publicLimiter = rateLimit({
+  windowMs: config.publicRateLimit.windowMs,
+  max: config.publicRateLimit.max,
+  message: { error: { code: 'RATE_LIMITED', message: 'Demasiadas solicitudes. Intenta de nuevo en un momento.' } },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // CORS (configured origins)
@@ -117,9 +137,10 @@ app.use('/api/v1/stock-control', stockControlRouter);
 // ==========================================
 app.use('/api/v1/ordenes', ordenesRouter);
 app.use('/api/v1/reservaciones', reservacionesRouter);
-app.use('/api/v1/qr', qrRouter);
+app.use('/api/v1/qr', publicLimiter, qrRouter);
 app.use('/api/v1/delivery', deliveryRouter);
-app.use('/api/v1/clientes', clientesAuthRouter);
+// Public client endpoints (login, pedir, reservar) — stricter rate limit
+app.use('/api/v1/clientes', publicLimiter, clientesAuthRouter);
 
 // ==========================================
 // API Routes — Phase 5: Catalog + Inventory

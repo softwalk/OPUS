@@ -21,10 +21,29 @@ import logger from '../logger.js';
 export async function getTenantClient(tenantId) {
   const client = await pool.connect();
   try {
-    // SET LOCAL only applies to the current transaction
-    // For non-transactional queries, we use SET (session-level)
+    // SECURITY: Use session-level set_config (3rd param = false) for non-transactional queries.
+    // For transactional queries, tenantTransaction() wraps in BEGIN/COMMIT where
+    // the context persists for the session lifetime of this client.
+    // IMPORTANT: When the client is released back to the pool, we MUST reset the
+    // tenant context to prevent cross-tenant data leakage.
     await client.query(`SELECT set_config('app.current_tenant', $1, false)`, [tenantId]);
     logger.debug('Tenant context set', { tenantId });
+
+    // Wrap release to clear tenant context before returning to pool
+    const originalRelease = client.release.bind(client);
+    let released = false;
+    client.release = async () => {
+      if (released) return;
+      released = true;
+      try {
+        // Reset tenant context to prevent leakage to next user of this connection
+        await client.query(`SELECT set_config('app.current_tenant', '', false)`);
+      } catch {
+        // If reset fails, still release the client
+      }
+      return originalRelease();
+    };
+
     return client;
   } catch (err) {
     client.release();
