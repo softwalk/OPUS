@@ -1,4 +1,5 @@
 import { createAuditEntry } from './audit.service.js';
+import { COCINA_ESTADOS, KDS_DEFAULTS } from '@opus/shared/constants';
 import logger from '../logger.js';
 
 // ============================================================================
@@ -8,7 +9,6 @@ import logger from '../logger.js';
 /**
  * Retrieve KDS urgency thresholds from the tenant's config JSONB.
  * Returns { alerta: number, critico: number } in minutes.
- * Defaults: alerta = 8, critico = 15.
  */
 async function getTenantKdsConfig(client, tenantId) {
   const { rows: [row] } = await client.query(
@@ -18,8 +18,8 @@ async function getTenantKdsConfig(client, tenantId) {
   );
 
   return {
-    alerta: row?.alerta != null ? parseFloat(row.alerta) : 8,
-    critico: row?.critico != null ? parseFloat(row.critico) : 15,
+    alerta: row?.alerta != null ? parseFloat(row.alerta) : KDS_DEFAULTS.ALERTA_MINUTOS,
+    critico: row?.critico != null ? parseFloat(row.critico) : KDS_DEFAULTS.CRITICO_MINUTOS,
   };
 }
 
@@ -28,9 +28,9 @@ async function getTenantKdsConfig(client, tenantId) {
  * Key = current estado, value = allowed next estado.
  */
 const VALID_TRANSITIONS = {
-  pendiente: 'en_preparacion',
-  en_preparacion: 'listo',
-  listo: 'entregado',
+  [COCINA_ESTADOS.PENDIENTE]: COCINA_ESTADOS.EN_PREPARACION,
+  [COCINA_ESTADOS.EN_PREPARACION]: COCINA_ESTADOS.LISTO,
+  [COCINA_ESTADOS.LISTO]: COCINA_ESTADOS.ENTREGADO,
 };
 
 // ============================================================================

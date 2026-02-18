@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ErrorBoundary } from '@opus/shared/components/ErrorBoundary';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import BottomNav from './components/BottomNav';
 import Login from './pages/Login';
@@ -36,11 +37,13 @@ function AppRoutes() {
 
 function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

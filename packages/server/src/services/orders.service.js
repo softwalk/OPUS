@@ -1,24 +1,7 @@
 import crypto from 'crypto';
 import { createAuditEntry } from './audit.service.js';
+import { getTenantIva } from '../helpers/tenant.js';
 import logger from '../logger.js';
-
-// ============================================================================
-// HELPERS (internal)
-// ============================================================================
-
-/**
- * Retrieve the IVA percentage for a tenant from their config JSONB.
- * Returns a decimal fraction (e.g. 16 for 16%).
- * Falls back to 16 if the config key is missing.
- */
-async function getTenantIva(client, tenantId) {
-  const { rows: [row] } = await client.query(
-    `SELECT config->>'iva_porcentaje' AS iva FROM tenants WHERE id = $1`,
-    [tenantId]
-  );
-  if (!row || row.iva == null) return 16;
-  return parseFloat(row.iva);
-}
 
 /**
  * Valid state transitions for digital orders.

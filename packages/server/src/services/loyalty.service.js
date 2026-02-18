@@ -1,14 +1,6 @@
 import { createAuditEntry } from './audit.service.js';
+import { fromCents } from '@opus/shared/utils/money';
 import logger from '../logger.js';
-
-// ============================================================================
-// HELPERS (internal)
-// ============================================================================
-
-/** Convert integer centavos to decimal pesos. */
-function fromCents(centavos) {
-  return centavos / 100;
-}
 
 /**
  * Default loyalty configuration used when a tenant has no custom config.

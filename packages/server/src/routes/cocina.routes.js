@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { cocinaCreateSchema, cocinaEstadoSchema } from '@opus/shared/schemas';
+import { COCINA_ESTADOS, WS_EVENTS } from '@opus/shared/constants';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
 import { validate } from '../middleware/validate.js';
@@ -47,7 +48,7 @@ router.post('/queue', requireAuth, validate(cocinaCreateSchema), asyncHandler(as
     tenantId: req.tenantId,
   });
 
-  emitEvent(req, 'kds:new', { id: result.id, mesa: result.mesa_numero, items: result.items_json });
+  emitEvent(req, WS_EVENTS.KDS_NEW, { id: result.id, mesa: result.mesa_numero, items: result.items_json });
   res.status(201).json(result);
 }));
 
@@ -69,10 +70,10 @@ router.put('/:id/estado', requireAuth, requireRole(3), validate(cocinaEstadoSche
 
   if (result.error) return sendResult(res, result);
 
-  emitEvent(req, 'kds:update', { id: req.params.id, estado: req.body.estado });
+  emitEvent(req, WS_EVENTS.KDS_UPDATE, { id: req.params.id, estado: req.body.estado });
 
-  if (req.body.estado === 'listo') {
-    emitEvent(req, 'notificacion:mesero', {
+  if (req.body.estado === COCINA_ESTADOS.LISTO) {
+    emitEvent(req, WS_EVENTS.NOTIFICACION_MESERO, {
       tipo: 'orden_lista',
       mesa: result.mesa_numero,
       mensaje: `Orden de mesa ${result.mesa_numero} lista`,

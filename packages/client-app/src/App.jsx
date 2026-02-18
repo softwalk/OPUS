@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ErrorBoundary } from '@opus/shared/components/ErrorBoundary';
 import { ClienteProvider } from './context/ClienteContext';
 import BottomNav from './components/BottomNav';
 import Home from './pages/Home';
@@ -10,6 +11,7 @@ import MiCuenta from './pages/MiCuenta';
 
 function App() {
   return (
+    <ErrorBoundary>
     <ClienteProvider>
       <BrowserRouter>
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -25,6 +27,7 @@ function App() {
         </div>
       </BrowserRouter>
     </ClienteProvider>
+    </ErrorBoundary>
   );
 }
 
