@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import { formatMoney } from '../lib/format';
 
 export default function MisMesas() {
+  const { get, post, user } = useAuth();
   const navigate = useNavigate();
   const [mesas, setMesas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,13 +13,11 @@ export default function MisMesas() {
   const [selectedMesa, setSelectedMesa] = useState(null);
   const [opening, setOpening] = useState(false);
 
-  const currentUser = (() => {
-    try { return JSON.parse(localStorage.getItem('opus_waiter_user')); } catch { return null; }
-  })();
+  const currentUser = user;
 
   const fetchMesas = async () => {
     try {
-      const data = await api.get('/pos/mesas');
+      const data = await get('/pos/mesas');
       setMesas(data || []);
     } catch {} finally { setLoading(false); }
   };
@@ -33,7 +32,7 @@ export default function MisMesas() {
     if (!selectedMesa) return;
     setOpening(true);
     try {
-      const result = await api.post(`/pos/mesas/${selectedMesa.id}/abrir`, { personas: Number(personas) });
+      const result = await post(`/pos/mesas/${selectedMesa.id}/abrir`, { personas: Number(personas) });
       fetchMesas();
       setSelectedMesa(null);
       setPersonas(1);

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import { formatMoney } from '../lib/format';
 
 export default function TomarOrden() {
+  const { get, post, del } = useAuth();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const cuentaId = searchParams.get('cuenta');
@@ -25,14 +26,14 @@ export default function TomarOrden() {
         if (cuentaId) {
           // Load cuenta + productos for order-taking
           const [c, p] = await Promise.all([
-            api.get(`/pos/cuentas/${cuentaId}`),
-            api.get('/productos?limit=200'),
+            get(`/pos/cuentas/${cuentaId}`),
+            get('/productos?limit=200'),
           ]);
           if (c) setCuenta(c);
           setProductos(p?.productos || p?.data || (Array.isArray(p) ? p : []));
         } else {
           // Load all open cuentas so waiter can pick one
-          const mesas = await api.get('/pos/mesas');
+          const mesas = await get('/pos/mesas');
           const abiertas = (mesas || []).filter(m => m.estado === 'ocupada' && m.cuenta_id);
           setCuentasAbiertas(abiertas);
         }
@@ -46,9 +47,9 @@ export default function TomarOrden() {
   const addConsumo = async (productoId) => {
     if (!cuentaId) return;
     try {
-      await api.post('/pos/consumos', { cuenta_id: cuentaId, producto_id: productoId, cantidad: 1 });
+      await post('/pos/consumos', { cuenta_id: cuentaId, producto_id: productoId, cantidad: 1 });
       showToast('Agregado');
-      const updated = await api.get(`/pos/cuentas/${cuentaId}`);
+      const updated = await get(`/pos/cuentas/${cuentaId}`);
       setCuenta(updated);
     } catch (err) {
       showToast(err.message);
@@ -57,9 +58,9 @@ export default function TomarOrden() {
 
   const cancelConsumo = async (consumoId) => {
     try {
-      await api.delete(`/pos/consumos/${consumoId}`);
+      await del(`/pos/consumos/${consumoId}`);
       showToast('Cancelado');
-      const updated = await api.get(`/pos/cuentas/${cuentaId}`);
+      const updated = await get(`/pos/cuentas/${cuentaId}`);
       setCuenta(updated);
     } catch (err) {
       showToast(err.message);
@@ -68,9 +69,9 @@ export default function TomarOrden() {
 
   const handleCobrar = async () => {
     try {
-      const formasPago = await api.get('/pos/formas-pago');
+      const formasPago = await get('/pos/formas-pago');
       if (formasPago?.length > 0) {
-        await api.post(`/pos/cuentas/${cuentaId}/cobrar`, { forma_pago_id: formasPago[0].id, propina: 0 });
+        await post(`/pos/cuentas/${cuentaId}/cobrar`, { forma_pago_id: formasPago[0].id, propina: 0 });
         showToast('Cuenta cobrada');
         navigate('/mesas');
       }

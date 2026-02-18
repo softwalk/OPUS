@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import { formatTime } from '../lib/format';
 
 export default function CocinaView() {
+  const { get } = useAuth();
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const intervalRef = useRef();
 
   const fetchQueue = async () => {
     try {
-      const data = await api.get('/cocina/queue');
+      const data = await get('/cocina/queue');
       setQueue(data || []);
     } catch {} finally { setLoading(false); }
   };

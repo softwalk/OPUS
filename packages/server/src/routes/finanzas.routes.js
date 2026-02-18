@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import {
   clienteCreateSchema,
+  clienteUpdateSchema,
   proveedorCreateSchema,
+  proveedorUpdateSchema,
   compraCreateSchema,
   abonarSchema,
   polizaCreateSchema,
   personalCreateSchema,
+  personalUpdateSchema,
+  facturaCreateSchema,
+  asistenciaSchema,
   paginationSchema,
   dateRangeSchema,
 } from '@opus/shared/schemas';
@@ -79,7 +84,7 @@ router.post('/clientes', requireAuth, requireRole(5), validate(clienteCreateSche
   }
 });
 
-router.put('/clientes/:id', requireAuth, requireRole(5), async (req, res, next) => {
+router.put('/clientes/:id', requireAuth, requireRole(5), validate(clienteUpdateSchema), async (req, res, next) => {
   try {
     const result = await updateCliente(req.tenantClient, req.params.id, req.body);
     if (result.error) return res.status(result.status).json({ error: { code: result.code, message: result.message } });
@@ -122,7 +127,7 @@ router.post('/proveedores', requireAuth, requireRole(5), validate(proveedorCreat
   }
 });
 
-router.put('/proveedores/:id', requireAuth, requireRole(5), async (req, res, next) => {
+router.put('/proveedores/:id', requireAuth, requireRole(5), validate(proveedorUpdateSchema), async (req, res, next) => {
   try {
     const result = await updateProveedor(req.tenantClient, req.params.id, req.body);
     if (result.error) return res.status(result.status).json({ error: { code: result.code, message: result.message } });
@@ -264,7 +269,7 @@ router.get('/facturas', requireAuth, requireRole(5), async (req, res, next) => {
   }
 });
 
-router.post('/facturas', requireAuth, requireRole(2), async (req, res, next) => {
+router.post('/facturas', requireAuth, requireRole(2), validate(facturaCreateSchema), async (req, res, next) => {
   try {
     const result = await createFactura(req.tenantClient, { ...req.body, tenantId: req.tenantId });
     res.status(201).json(result);
@@ -331,7 +336,7 @@ router.post('/personal', requireAuth, requireRole(9), validate(personalCreateSch
   }
 });
 
-router.put('/personal/:id', requireAuth, requireRole(9), async (req, res, next) => {
+router.put('/personal/:id', requireAuth, requireRole(9), validate(personalUpdateSchema), async (req, res, next) => {
   try {
     const result = await updatePersonal(req.tenantClient, req.params.id, req.body);
     if (result.error) return res.status(result.status).json({ error: { code: result.code, message: result.message } });
@@ -345,15 +350,9 @@ router.put('/personal/:id', requireAuth, requireRole(9), async (req, res, next) 
 //  ASISTENCIA
 // ============================================================================
 
-router.post('/asistencia', requireAuth, async (req, res, next) => {
+router.post('/asistencia', requireAuth, validate(asistenciaSchema), async (req, res, next) => {
   try {
-    const { personal_id, tipo } = req.body;
-    if (!personal_id || !['entrada', 'salida'].includes(tipo)) {
-      return res.status(400).json({
-        error: { code: 'VALIDATION_ERROR', message: 'Se requiere personal_id y tipo (entrada/salida)' },
-      });
-    }
-    const result = await registrarAsistencia(req.tenantClient, { personal_id, tipo, tenantId: req.tenantId });
+    const result = await registrarAsistencia(req.tenantClient, { personal_id: req.body.personal_id, tipo: req.body.tipo, tenantId: req.tenantId });
     if (result.error) return res.status(result.status).json({ error: { code: result.code, message: result.message } });
     res.status(201).json(result);
   } catch (err) {

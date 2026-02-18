@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { clienteLoginSchema, clientePedirSchema, clienteReservarSchema, calificacionSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
+import { validate } from '../middleware/validate.js';
 import { query as poolQuery } from '../db/pool.js';
 import { getTenantClient } from '../db/tenant.js';
 import {
@@ -32,21 +34,9 @@ async function resolveTenant(slug) {
 //  Also looks up the client in `clientes` table for loyalty data.
 // ============================================================================
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', validate(clienteLoginSchema), async (req, res, next) => {
   try {
     const { telefono, nombre, tenant_slug } = req.body;
-
-    if (!telefono) {
-      return res.status(400).json({
-        error: { code: 'TELEFONO_REQUIRED', message: 'Telefono es requerido' },
-      });
-    }
-
-    if (!tenant_slug) {
-      return res.status(400).json({
-        error: { code: 'TENANT_REQUIRED', message: 'Slug del restaurante es requerido' },
-      });
-    }
 
     const tenant = await resolveTenant(tenant_slug);
     if (!tenant) {
@@ -170,31 +160,13 @@ router.get('/loyalty/:telefono', async (req, res, next) => {
 //  Requires tenant_slug in body. No staff JWT needed.
 // ============================================================================
 
-router.post('/pedir', async (req, res, next) => {
+router.post('/pedir', validate(clientePedirSchema), async (req, res, next) => {
   try {
     const {
       tenant_slug, tipo, mesa_id, mesa_numero,
       cliente_nombre, cliente_telefono, direccion_entrega,
       zona_entrega_id, items, notas, forma_pago,
     } = req.body;
-
-    if (!tenant_slug) {
-      return res.status(400).json({
-        error: { code: 'TENANT_REQUIRED', message: 'Slug del restaurante es requerido' },
-      });
-    }
-
-    if (!items?.length) {
-      return res.status(400).json({
-        error: { code: 'ITEMS_REQUIRED', message: 'Al menos un item es requerido' },
-      });
-    }
-
-    if (!tipo || !['qr_mesa', 'delivery', 'para_llevar'].includes(tipo)) {
-      return res.status(400).json({
-        error: { code: 'TIPO_INVALID', message: 'Tipo debe ser qr_mesa, delivery o para_llevar' },
-      });
-    }
 
     const tenant = await resolveTenant(tenant_slug);
     if (!tenant) {
@@ -299,24 +271,12 @@ router.get('/reservar/disponibilidad', async (req, res, next) => {
 //  Requires tenant_slug in body. No staff JWT needed.
 // ============================================================================
 
-router.post('/reservar', async (req, res, next) => {
+router.post('/reservar', validate(clienteReservarSchema), async (req, res, next) => {
   try {
     const {
       tenant_slug, cliente_nombre, cliente_telefono, cliente_email,
       fecha, hora, personas, zona_preferida_id, notas,
     } = req.body;
-
-    if (!tenant_slug) {
-      return res.status(400).json({
-        error: { code: 'TENANT_REQUIRED', message: 'Slug del restaurante es requerido' },
-      });
-    }
-
-    if (!cliente_nombre || !fecha || !hora) {
-      return res.status(400).json({
-        error: { code: 'MISSING_FIELDS', message: 'Nombre, fecha y hora son requeridos' },
-      });
-    }
 
     const tenant = await resolveTenant(tenant_slug);
     if (!tenant) {
@@ -390,7 +350,7 @@ router.get('/calificaciones', requireAuth, async (req, res, next) => {
 //  Requires authentication
 // ============================================================================
 
-router.post('/calificaciones', requireAuth, async (req, res, next) => {
+router.post('/calificaciones', requireAuth, validate(calificacionSchema), async (req, res, next) => {
   try {
     const result = await addCalificacion(req.tenantClient, {
       ordenId: req.body.orden_id,

@@ -1,20 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Resumen() {
+  const { get, user, logout } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const user = JSON.parse(localStorage.getItem('opus_waiter_user') || '{}');
 
   useEffect(() => {
-    api.get('/reportes/dashboard-mesero').then(setData).catch(() => {}).finally(() => setLoading(false));
+    get('/reportes/dashboard-mesero').then(setData).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const handleLogout = () => {
-    api.setToken(null);
-    localStorage.removeItem('opus_waiter_user');
+    logout();
     navigate('/login');
   };
 

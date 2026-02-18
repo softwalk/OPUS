@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { reservacionCreateSchema } from '@opus/shared/schemas';
+import { reservacionCreateSchema, reservacionEstadoSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
 import { validate } from '../middleware/validate.js';
@@ -172,6 +172,7 @@ router.put(
   '/:id/estado',
   requireAuth,
   requireRole(2),
+  validate(reservacionEstadoSchema),
   async (req, res, next) => {
     try {
       const result = await updateReservacionEstado(req.tenantClient, {

@@ -89,6 +89,12 @@ export const marcar86Schema = z.object({
   responsable: z.string().max(100).optional(),
 });
 
+// === Modificadores ===
+export const modificadorCreateSchema = z.object({
+  nombre: z.string().min(1, 'Nombre requerido').max(100),
+  precio_extra: z.number().int().min(0).default(0),
+});
+
 // === Kitchen ===
 export const cocinaCreateSchema = z.object({
   cuenta_id: uid().optional(),
@@ -217,6 +223,146 @@ export const personalCreateSchema = z.object({
   password: z.string().min(6).optional(),
   telefono: z.string().max(20).optional(),
   direccion: z.string().max(300).optional(),
+});
+
+// === Delivery ===
+export const zonaEntregaCreateSchema = z.object({
+  nombre: z.string().min(1, 'Nombre requerido').max(100),
+  costo_envio: z.number().int().min(0).default(0),
+  tiempo_estimado_min: z.number().int().min(0).optional(),
+  descripcion: z.string().max(300).optional(),
+});
+
+export const zonaEntregaUpdateSchema = zonaEntregaCreateSchema.partial().extend({
+  activa: z.boolean().optional(),
+});
+
+// === Catalog Grupos ===
+export const grupoCreateSchema = z.object({
+  nombre: z.string().min(1, 'Nombre requerido').max(100),
+  descripcion: z.string().max(300).optional(),
+});
+
+export const grupoUpdateSchema = grupoCreateSchema.partial();
+
+// === Order Estado ===
+export const ordenEstadoSchema = z.object({
+  estado: z.enum(['pendiente', 'confirmada', 'en_preparacion', 'lista', 'en_camino', 'entregada', 'cancelada']),
+  motivo: z.string().max(300).optional(),
+});
+
+// === Factura ===
+export const facturaCreateSchema = z.object({
+  cliente_id: uid().optional(),
+  cuenta_id: uid().optional(),
+  subtotal: z.number().int().min(0),
+  iva: z.number().int().min(0),
+  total: z.number().int().positive('Total debe ser mayor a 0'),
+});
+
+// === Client Update (partial of create) ===
+export const clienteUpdateSchema = clienteCreateSchema.partial();
+
+// === Proveedor Update (partial of create) ===
+export const proveedorUpdateSchema = proveedorCreateSchema.partial();
+
+// === Asistencia ===
+export const asistenciaSchema = z.object({
+  personal_id: uid('ID de personal invalido'),
+  tipo: z.enum(['entrada', 'salida']),
+});
+
+// === Client Login (public) ===
+export const clienteLoginSchema = z.object({
+  telefono: z.string().min(8, 'Telefono minimo 8 caracteres').max(20),
+  nombre: z.string().max(100).optional(),
+  tenant_slug: z.string().min(1, 'Slug del restaurante requerido'),
+});
+
+// === Public Order (client-app) ===
+export const clientePedirSchema = z.object({
+  tenant_slug: z.string().min(1, 'Slug del restaurante requerido'),
+  tipo: z.enum(['qr_mesa', 'delivery', 'para_llevar']),
+  mesa_id: uid().optional(),
+  mesa_numero: z.number().int().optional(),
+  cliente_nombre: z.string().max(100).optional(),
+  cliente_telefono: z.string().max(20).optional(),
+  direccion_entrega: z.string().max(500).optional(),
+  zona_entrega_id: uid().optional(),
+  items: z.array(z.object({
+    producto_id: uid(),
+    cantidad: z.number().positive().default(1),
+    modificadores: z.array(z.string()).default([]),
+    notas: z.string().max(255).optional(),
+  })).min(1, 'Al menos un item es requerido'),
+  notas: z.string().max(500).optional(),
+  forma_pago: z.string().max(50).optional(),
+});
+
+// === Public Reservation (client-app) ===
+export const clienteReservarSchema = z.object({
+  tenant_slug: z.string().min(1, 'Slug del restaurante requerido'),
+  cliente_nombre: z.string().min(2).max(100),
+  cliente_telefono: z.string().min(8).max(20).optional(),
+  cliente_email: z.string().email().optional(),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  hora: z.string().regex(/^\d{2}:\d{2}$/),
+  personas: z.number().int().min(1).max(50).default(2),
+  zona_preferida_id: uid().optional(),
+  notas: z.string().max(500).optional(),
+});
+
+// === Calificacion ===
+export const calificacionSchema = z.object({
+  orden_id: uid().optional(),
+  puntuacion: z.number().int().min(1).max(5),
+  comentario: z.string().max(500).optional(),
+  cliente_nombre: z.string().max(100).optional(),
+});
+
+// === QR Generate ===
+export const qrGenerateSchema = z.object({
+  mesa_id: uid('ID de mesa invalido'),
+});
+
+// === BOM Explosion ===
+export const explosionBOMSchema = z.object({
+  producto_id: uid('ID de producto invalido'),
+  porciones: z.number().positive().default(1),
+});
+
+// === Inventory Transfer ===
+export const traspasoSchema = z.object({
+  producto_id: uid('ID de producto invalido'),
+  de_almacen_id: uid('Almacen origen invalido'),
+  a_almacen_id: uid('Almacen destino invalido'),
+  cantidad: z.number().positive('Cantidad debe ser mayor a 0'),
+});
+
+// === Inventory Adjustment ===
+export const ajusteSchema = z.object({
+  producto_id: uid('ID de producto invalido'),
+  almacen_id: uid('ID de almacen invalido'),
+  cantidad_real: z.number().min(0, 'Cantidad real no puede ser negativa'),
+});
+
+// === Personal Update (partial of create, without password) ===
+export const personalUpdateSchema = z.object({
+  codigo: z.string().min(1).max(20).optional(),
+  nombre: z.string().min(2).max(100).optional(),
+  puesto: z.enum(['mesero', 'cajero', 'cocinero', 'subgerente', 'gerente']).optional(),
+  nivel_acceso: z.number().int().min(1).max(9).optional(),
+  email: z.string().email().optional(),
+  telefono: z.string().max(20).optional(),
+  direccion: z.string().max(300).optional(),
+  activo: z.boolean().optional(),
+});
+
+// === Reservacion Estado ===
+export const reservacionEstadoSchema = z.object({
+  estado: z.enum(['confirmada', 'sentada', 'completada', 'cancelada', 'no_show']),
+  mesa_id: uid().optional(),
+  personas: z.number().int().min(1).optional(),
 });
 
 // === Generic Query Params ===

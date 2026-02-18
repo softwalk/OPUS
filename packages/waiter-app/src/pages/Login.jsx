@@ -1,21 +1,26 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login, isAuthenticated } = useAuth();
   const [form, setForm] = useState({ codigo: '', password: '', tenant_slug: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Redirect if already logged in
+  if (isAuthenticated) {
+    navigate('/mesas', { replace: true });
+    return null;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const data = await api.post('/auth/login', form);
-      api.setToken(data.token);
-      localStorage.setItem('opus_waiter_user', JSON.stringify(data.user));
+      await login(form);
       navigate('/mesas');
     } catch (err) {
       setError(err.message);

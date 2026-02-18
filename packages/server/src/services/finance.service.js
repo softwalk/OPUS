@@ -304,35 +304,42 @@ export async function getCompra(client, compraId) {
  * @param {string} params.tenantId
  */
 export async function createCompra(client, { proveedor_id, fecha_entrega, notas, lineas, tenantId }) {
-  // Generate folio using sequence (CONCURRENCY-SAFE: prevents duplicate folios)
-  const { rows: [{ nextval }] } = await client.query(
-    `SELECT nextval('seq_folio_oc')`
-  );
-  const folio = `OC-${String(nextval).padStart(5, '0')}`;
-
-  // Calculate total
-  const total = lineas.reduce((sum, l) => sum + Math.round(l.cantidad * l.precio_unitario), 0);
-
-  // Create OC header
-  const { rows: [oc] } = await client.query(
-    `INSERT INTO ordenes_compra (tenant_id, folio, proveedor_id, estado, fecha_entrega, notas, total)
-     VALUES ($1, $2, $3, 'pendiente', $4, $5, $6)
-     RETURNING *`,
-    [tenantId, folio, proveedor_id, fecha_entrega || null, notas || null, total]
-  );
-
-  // Create lines
-  for (const linea of lineas) {
-    const subtotal = Math.round(linea.cantidad * linea.precio_unitario);
-    await client.query(
-      `INSERT INTO orden_compra_lineas (tenant_id, orden_compra_id, producto_id, cantidad, precio_unitario, subtotal)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [tenantId, oc.id, linea.producto_id, linea.cantidad, linea.precio_unitario, subtotal]
+  await client.query('BEGIN');
+  try {
+    // Generate folio using sequence (CONCURRENCY-SAFE: prevents duplicate folios)
+    const { rows: [{ nextval }] } = await client.query(
+      `SELECT nextval('seq_folio_oc')`
     );
-  }
+    const folio = `OC-${String(nextval).padStart(5, '0')}`;
 
-  logger.info('Orden de compra created', { tenantId, ocId: oc.id, folio, total });
-  return { ...oc, lineas };
+    // Calculate total
+    const total = lineas.reduce((sum, l) => sum + Math.round(l.cantidad * l.precio_unitario), 0);
+
+    // Create OC header
+    const { rows: [oc] } = await client.query(
+      `INSERT INTO ordenes_compra (tenant_id, folio, proveedor_id, estado, fecha_entrega, notas, total)
+       VALUES ($1, $2, $3, 'pendiente', $4, $5, $6)
+       RETURNING *`,
+      [tenantId, folio, proveedor_id, fecha_entrega || null, notas || null, total]
+    );
+
+    // Create lines
+    for (const linea of lineas) {
+      const subtotal = Math.round(linea.cantidad * linea.precio_unitario);
+      await client.query(
+        `INSERT INTO orden_compra_lineas (tenant_id, orden_compra_id, producto_id, cantidad, precio_unitario, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [tenantId, oc.id, linea.producto_id, linea.cantidad, linea.precio_unitario, subtotal]
+      );
+    }
+
+    await client.query('COMMIT');
+    logger.info('Orden de compra created', { tenantId, ocId: oc.id, folio, total });
+    return { ...oc, lineas };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
@@ -340,7 +347,7 @@ export async function createCompra(client, { proveedor_id, fecha_entrega, notas,
  * Only for estado = 'pendiente'.
  */
 export async function recibirCompra(client, compraId, { almacen_id, tenantId, usuario, usuarioId, ip }) {
-  // 1. Get OC
+  // 1. Get OC (before transaction — read-only check)
   const { rows: [oc] } = await client.query(
     `SELECT * FROM ordenes_compra WHERE id = $1`,
     [compraId]
@@ -354,75 +361,92 @@ export async function recibirCompra(client, compraId, { almacen_id, tenantId, us
     return { error: true, status: 409, code: 'COMPRA_NO_PENDIENTE', message: `La OC ya está en estado '${oc.estado}'` };
   }
 
-  // 2. Get lines
-  const { rows: lineas } = await client.query(
-    `SELECT * FROM orden_compra_lineas WHERE orden_compra_id = $1`,
-    [compraId]
-  );
+  await client.query('BEGIN');
+  try {
+    // 2. Lock OC row to prevent concurrent reception
+    const { rows: [lockedOC] } = await client.query(
+      `SELECT estado FROM ordenes_compra WHERE id = $1 FOR UPDATE`,
+      [compraId]
+    );
+    if (lockedOC.estado !== 'pendiente') {
+      await client.query('ROLLBACK');
+      return { error: true, status: 409, code: 'COMPRA_NO_PENDIENTE', message: `La OC ya está en estado '${lockedOC.estado}'` };
+    }
 
-  // 3. Create inventory entries for each line
-  for (const linea of lineas) {
-    // Upsert existencias
-    await client.query(
-      `INSERT INTO existencias (tenant_id, producto_id, almacen_id, cantidad, costo_promedio)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (tenant_id, producto_id, almacen_id) DO UPDATE SET
-         cantidad = existencias.cantidad + EXCLUDED.cantidad,
-         costo_promedio = CASE
-           WHEN existencias.cantidad + EXCLUDED.cantidad > 0
-           THEN ((existencias.cantidad * existencias.costo_promedio) + (EXCLUDED.cantidad * EXCLUDED.costo_promedio))
-                / (existencias.cantidad + EXCLUDED.cantidad)
-           ELSE EXCLUDED.costo_promedio
-         END,
-         updated_at = NOW()`,
-      [tenantId, linea.producto_id, almacen_id, linea.cantidad, linea.precio_unitario]
+    // 3. Get lines
+    const { rows: lineas } = await client.query(
+      `SELECT * FROM orden_compra_lineas WHERE orden_compra_id = $1`,
+      [compraId]
     );
 
-    // Create movimiento_inventario
+    // 4. Create inventory entries for each line
+    for (const linea of lineas) {
+      // Upsert existencias
+      await client.query(
+        `INSERT INTO existencias (tenant_id, producto_id, almacen_id, cantidad, costo_promedio)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id, producto_id, almacen_id) DO UPDATE SET
+           cantidad = existencias.cantidad + EXCLUDED.cantidad,
+           costo_promedio = CASE
+             WHEN existencias.cantidad + EXCLUDED.cantidad > 0
+             THEN ((existencias.cantidad * existencias.costo_promedio) + (EXCLUDED.cantidad * EXCLUDED.costo_promedio))
+                  / (existencias.cantidad + EXCLUDED.cantidad)
+             ELSE EXCLUDED.costo_promedio
+           END,
+           updated_at = NOW()`,
+        [tenantId, linea.producto_id, almacen_id, linea.cantidad, linea.precio_unitario]
+      );
+
+      // Create movimiento_inventario
+      await client.query(
+        `INSERT INTO movimientos_inventario
+           (tenant_id, producto_id, almacen_id, tipo, cantidad, costo_unitario, referencia, usuario_id)
+         VALUES ($1, $2, $3, 'entrada_compra', $4, $5, $6, $7)`,
+        [tenantId, linea.producto_id, almacen_id, linea.cantidad, linea.precio_unitario, `OC ${oc.folio}`, usuarioId]
+      );
+    }
+
+    // 5. Update OC status
     await client.query(
-      `INSERT INTO movimientos_inventario
-         (tenant_id, producto_id, almacen_id, tipo, cantidad, costo_unitario, referencia, usuario_id)
-       VALUES ($1, $2, $3, 'entrada_compra', $4, $5, $6, $7)`,
-      [tenantId, linea.producto_id, almacen_id, linea.cantidad, linea.precio_unitario, `OC ${oc.folio}`, usuarioId]
+      `UPDATE ordenes_compra SET estado = 'recibida', fecha_recepcion = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [compraId]
     );
-  }
 
-  // 4. Update OC status
-  await client.query(
-    `UPDATE ordenes_compra SET estado = 'recibida', fecha_recepcion = NOW(), updated_at = NOW()
-     WHERE id = $1`,
-    [compraId]
-  );
+    // 6. Create CxP (cuenta por pagar)
+    await client.query(
+      `INSERT INTO cuentas_pagar (tenant_id, proveedor_id, concepto, importe, saldo, fecha)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE))`,
+      [
+        tenantId,
+        oc.proveedor_id,
+        `Recepción OC ${oc.folio}`,
+        oc.total,
+        oc.total,
+        oc.fecha_entrega || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      ]
+    );
 
-  // 5. Create CxP (cuenta por pagar)
-  await client.query(
-    `INSERT INTO cuentas_pagar (tenant_id, proveedor_id, concepto, importe, saldo, fecha)
-     VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE))`,
-    [
+    // 7. Audit (FIXED: use correct schema matching audit.service.js)
+    await createAuditEntry(client, {
       tenantId,
-      oc.proveedor_id,
-      `Recepción OC ${oc.folio}`,
-      oc.total,
-      oc.total,
-      oc.fecha_entrega || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-    ]
-  );
+      tipo: 'recepcion_oc',
+      entidad: 'ordenes_compra',
+      entidadId: compraId,
+      descripcion: `OC ${oc.folio} recibida — ${lineas.length} líneas ingresadas`,
+      datos: { estado: 'recibida', lineas: lineas.length },
+      usuario,
+      ip,
+    });
 
-  // 6. Audit (FIXED: use correct schema matching audit.service.js)
-  await createAuditEntry(client, {
-    tenantId,
-    tipo: 'recepcion_oc',
-    entidad: 'ordenes_compra',
-    entidadId: compraId,
-    descripcion: `OC ${oc.folio} recibida — ${lineas.length} líneas ingresadas`,
-    datos: { estado: 'recibida', lineas: lineas.length },
-    usuario,
-    ip,
-  });
+    await client.query('COMMIT');
+    logger.info('OC received', { tenantId, compraId, lineas: lineas.length });
 
-  logger.info('OC received', { tenantId, compraId, lineas: lineas.length });
-
-  return { ok: true, message: `OC ${oc.folio} recibida. ${lineas.length} productos ingresados al almacén.` };
+    return { ok: true, message: `OC ${oc.folio} recibida. ${lineas.length} productos ingresados al almacén.` };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
@@ -493,21 +517,28 @@ export async function listCxC(client, { page = 1, limit = 50, estado } = {}) {
  * Create CxC manually (also created automatically at cobrar with forma_pago CX).
  */
 export async function createCxC(client, { cliente_id, concepto, monto, fecha_vencimiento, referencia, tenantId }) {
-  const { rows: [created] } = await client.query(
-    `INSERT INTO cuentas_cobrar (tenant_id, cliente_id, concepto, importe, saldo, fecha)
-     VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE))
-     RETURNING *`,
-    [tenantId, cliente_id, concepto, monto, monto, fecha_vencimiento || null]
-  );
+  await client.query('BEGIN');
+  try {
+    const { rows: [created] } = await client.query(
+      `INSERT INTO cuentas_cobrar (tenant_id, cliente_id, concepto, importe, saldo, fecha)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE))
+       RETURNING *`,
+      [tenantId, cliente_id, concepto, monto, monto, fecha_vencimiento || null]
+    );
 
-  // Update client's balance
-  await client.query(
-    `UPDATE clientes SET saldo = saldo + $1, updated_at = NOW() WHERE id = $2`,
-    [monto, cliente_id]
-  );
+    // Update client's balance
+    await client.query(
+      `UPDATE clientes SET saldo = saldo + $1, updated_at = NOW() WHERE id = $2`,
+      [monto, cliente_id]
+    );
 
-  logger.info('CxC created', { tenantId, cxcId: created.id, monto });
-  return created;
+    await client.query('COMMIT');
+    logger.info('CxC created', { tenantId, cxcId: created.id, monto });
+    return created;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
@@ -517,6 +548,7 @@ export async function createCxC(client, { cliente_id, concepto, monto, fecha_ven
  * @param {{ monto: number, tenantId: string, usuario: string, ip: string }} params
  */
 export async function abonarCxC(client, cxcId, { monto, tenantId, usuario, ip }) {
+  // Pre-transaction read-only validation
   const { rows: [cxc] } = await client.query(
     `SELECT cc.*, c.nombre AS cliente_nombre
      FROM cuentas_cobrar cc
@@ -540,50 +572,63 @@ export async function abonarCxC(client, cxcId, { monto, tenantId, usuario, ip })
   const nuevoSaldo = cxc.saldo - monto;
   const nuevoEstado = nuevoSaldo === 0 ? 'pagada' : 'parcial';
 
-  // Update CxC
-  await client.query(
-    `UPDATE cuentas_cobrar
-     SET saldo = $1, estado = $2, updated_at = NOW()
-     WHERE id = $3`,
-    [nuevoSaldo, nuevoEstado, cxcId]
-  );
+  await client.query('BEGIN');
+  try {
+    // Lock CxC row to prevent concurrent payments
+    await client.query(
+      `SELECT id FROM cuentas_cobrar WHERE id = $1 FOR UPDATE`,
+      [cxcId]
+    );
 
-  // Update client's balance
-  await client.query(
-    `UPDATE clientes
-     SET saldo = saldo - $1, updated_at = NOW()
-     WHERE id = $2`,
-    [monto, cxc.cliente_id]
-  );
+    // Update CxC
+    await client.query(
+      `UPDATE cuentas_cobrar
+       SET saldo = $1, estado = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [nuevoSaldo, nuevoEstado, cxcId]
+    );
 
-  // Create poliza de ingreso
-  await client.query(
-    `INSERT INTO polizas (tenant_id, tipo, descripcion, importe, referencia)
-     VALUES ($1, 'ingreso', $2, $3, $4)`,
-    [tenantId, `Abono CxC - ${cxc.cliente_nombre}`, monto, `CxC-${cxcId}`]
-  );
+    // Update client's balance
+    await client.query(
+      `UPDATE clientes
+       SET saldo = saldo - $1, updated_at = NOW()
+       WHERE id = $2`,
+      [monto, cxc.cliente_id]
+    );
 
-  // Audit (FIXED: use correct schema matching audit.service.js)
-  await createAuditEntry(client, {
-    tenantId,
-    tipo: 'abono_cxc',
-    entidad: 'cuentas_cobrar',
-    entidadId: cxcId,
-    descripcion: `Abono CxC — ${cxc.cliente_nombre}: $${(monto / 100).toFixed(2)}`,
-    datos: { monto_abono: monto, saldo_anterior: cxc.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
-    usuario,
-    ip,
-  });
+    // Create poliza de ingreso
+    await client.query(
+      `INSERT INTO polizas (tenant_id, tipo, descripcion, importe, referencia)
+       VALUES ($1, 'ingreso', $2, $3, $4)`,
+      [tenantId, `Abono CxC - ${cxc.cliente_nombre}`, monto, `CxC-${cxcId}`]
+    );
 
-  logger.info('CxC abono', { tenantId, cxcId, monto, nuevoSaldo, nuevoEstado });
+    // Audit (FIXED: use correct schema matching audit.service.js)
+    await createAuditEntry(client, {
+      tenantId,
+      tipo: 'abono_cxc',
+      entidad: 'cuentas_cobrar',
+      entidadId: cxcId,
+      descripcion: `Abono CxC — ${cxc.cliente_nombre}: $${(monto / 100).toFixed(2)}`,
+      datos: { monto_abono: monto, saldo_anterior: cxc.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
+      usuario,
+      ip,
+    });
 
-  return {
-    ok: true,
-    abono: monto,
-    saldo_anterior: cxc.saldo,
-    saldo_nuevo: nuevoSaldo,
-    estado: nuevoEstado,
-  };
+    await client.query('COMMIT');
+    logger.info('CxC abono', { tenantId, cxcId, monto, nuevoSaldo, nuevoEstado });
+
+    return {
+      ok: true,
+      abono: monto,
+      saldo_anterior: cxc.saldo,
+      saldo_nuevo: nuevoSaldo,
+      estado: nuevoEstado,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
 }
 
 // ============================================================================
@@ -629,6 +674,7 @@ export async function listCxP(client, { page = 1, limit = 50, estado } = {}) {
  * Abonar (partial payment) to CxP.
  */
 export async function abonarCxP(client, cxpId, { monto, tenantId, usuario, ip }) {
+  // Pre-transaction read-only validation
   const { rows: [cxp] } = await client.query(
     `SELECT cp.*, p.nombre AS proveedor_nombre
      FROM cuentas_pagar cp
@@ -652,41 +698,54 @@ export async function abonarCxP(client, cxpId, { monto, tenantId, usuario, ip })
   const nuevoSaldo = cxp.saldo - monto;
   const nuevoEstado = nuevoSaldo === 0 ? 'pagada' : 'parcial';
 
-  await client.query(
-    `UPDATE cuentas_pagar
-     SET saldo = $1, estado = $2, updated_at = NOW()
-     WHERE id = $3`,
-    [nuevoSaldo, nuevoEstado, cxpId]
-  );
+  await client.query('BEGIN');
+  try {
+    // Lock CxP row to prevent concurrent payments
+    await client.query(
+      `SELECT id FROM cuentas_pagar WHERE id = $1 FOR UPDATE`,
+      [cxpId]
+    );
 
-  // Create poliza de egreso
-  await client.query(
-    `INSERT INTO polizas (tenant_id, tipo, descripcion, importe, referencia)
-     VALUES ($1, 'egreso', $2, $3, $4)`,
-    [tenantId, `Pago CxP - ${cxp.proveedor_nombre}`, monto, `CxP-${cxpId}`]
-  );
+    await client.query(
+      `UPDATE cuentas_pagar
+       SET saldo = $1, estado = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [nuevoSaldo, nuevoEstado, cxpId]
+    );
 
-  // Audit (FIXED: use correct schema matching audit.service.js)
-  await createAuditEntry(client, {
-    tenantId,
-    tipo: 'abono_cxp',
-    entidad: 'cuentas_pagar',
-    entidadId: cxpId,
-    descripcion: `Pago CxP — ${cxp.proveedor_nombre}: $${(monto / 100).toFixed(2)}`,
-    datos: { monto_abono: monto, saldo_anterior: cxp.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
-    usuario,
-    ip,
-  });
+    // Create poliza de egreso
+    await client.query(
+      `INSERT INTO polizas (tenant_id, tipo, descripcion, importe, referencia)
+       VALUES ($1, 'egreso', $2, $3, $4)`,
+      [tenantId, `Pago CxP - ${cxp.proveedor_nombre}`, monto, `CxP-${cxpId}`]
+    );
 
-  logger.info('CxP abono', { tenantId, cxpId, monto, nuevoSaldo, nuevoEstado });
+    // Audit (FIXED: use correct schema matching audit.service.js)
+    await createAuditEntry(client, {
+      tenantId,
+      tipo: 'abono_cxp',
+      entidad: 'cuentas_pagar',
+      entidadId: cxpId,
+      descripcion: `Pago CxP — ${cxp.proveedor_nombre}: $${(monto / 100).toFixed(2)}`,
+      datos: { monto_abono: monto, saldo_anterior: cxp.saldo, saldo_nuevo: nuevoSaldo, estado: nuevoEstado },
+      usuario,
+      ip,
+    });
 
-  return {
-    ok: true,
-    abono: monto,
-    saldo_anterior: cxp.saldo,
-    saldo_nuevo: nuevoSaldo,
-    estado: nuevoEstado,
-  };
+    await client.query('COMMIT');
+    logger.info('CxP abono', { tenantId, cxpId, monto, nuevoSaldo, nuevoEstado });
+
+    return {
+      ok: true,
+      abono: monto,
+      saldo_anterior: cxp.saldo,
+      saldo_nuevo: nuevoSaldo,
+      estado: nuevoEstado,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
 }
 
 // ============================================================================

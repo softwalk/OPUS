@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { recetaCreateSchema, elaborarSchema } from '@opus/shared/schemas';
+import { recetaCreateSchema, elaborarSchema, modificadorCreateSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
 import { validate } from '../middleware/validate.js';
@@ -204,18 +204,13 @@ router.post(
   '/:producto_id/modificadores',
   requireAuth,
   requireRole(5),
+  validate(modificadorCreateSchema),
   async (req, res, next) => {
     try {
-      const { nombre, precio_extra } = req.body;
-      if (!nombre) {
-        return res.status(400).json({
-          error: { code: 'VALIDATION_ERROR', message: 'Nombre requerido' },
-        });
-      }
       const result = await addModificador(req.tenantClient, {
         productoId: req.params.producto_id,
-        nombre,
-        precio_extra,
+        nombre: req.body.nombre,
+        precio_extra: req.body.precio_extra,
         tenantId: req.tenantId,
       });
       res.status(201).json(result);

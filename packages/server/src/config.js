@@ -30,7 +30,8 @@ export const config = {
 
   // JWT — NO fallback in production
   jwtSecret: process.env.JWT_SECRET || (isProduction ? undefined : 'opus_dev_only_secret_not_for_production'),
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
 
   // CORS
   corsOrigin: (process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:5174,http://localhost:5175').split(',').map(s => s.trim()),

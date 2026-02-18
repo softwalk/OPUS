@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Notificaciones() {
+  const { get, post, put, del } = useAuth();
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
 

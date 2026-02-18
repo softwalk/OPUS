@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { productoCreateSchema, productoUpdateSchema, paginationSchema } from '@opus/shared/schemas';
+import { productoCreateSchema, productoUpdateSchema, grupoCreateSchema, grupoUpdateSchema, paginationSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
 import { validate } from '../middleware/validate.js';
@@ -65,17 +65,11 @@ router.get('/grupos/all', requireAuth, async (req, res, next) => {
  * Create a product group.
  * Requires gerente level (nivel_acceso >= 5).
  */
-router.post('/grupos', requireAuth, requireRole(5), async (req, res, next) => {
+router.post('/grupos', requireAuth, requireRole(5), validate(grupoCreateSchema), async (req, res, next) => {
   try {
-    const { nombre, descripcion } = req.body;
-    if (!nombre) {
-      return res.status(400).json({
-        error: { code: 'VALIDATION_ERROR', message: 'Nombre requerido' },
-      });
-    }
     const result = await createGrupo(req.tenantClient, {
-      nombre,
-      descripcion,
+      nombre: req.body.nombre,
+      descripcion: req.body.descripcion,
       tenantId: req.tenantId,
     });
     res.status(201).json(result);
@@ -89,7 +83,7 @@ router.post('/grupos', requireAuth, requireRole(5), async (req, res, next) => {
  * Update a product group.
  * Requires gerente level (nivel_acceso >= 5).
  */
-router.put('/grupos/:id', requireAuth, requireRole(5), async (req, res, next) => {
+router.put('/grupos/:id', requireAuth, requireRole(5), validate(grupoUpdateSchema), async (req, res, next) => {
   try {
     const result = await updateGrupo(req.tenantClient, {
       grupoId: req.params.id,

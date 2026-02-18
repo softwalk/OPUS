@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { loginSchema } from '@opus/shared/schemas';
 import { config } from '../config.js';
 import { query } from '../db/pool.js';
@@ -9,10 +10,31 @@ import logger from '../logger.js';
 const router = Router();
 
 /**
+ * Generate an access token (short-lived) and a refresh token (long-lived).
+ * The refresh token contains a unique `jti` (JWT ID) for revocation tracking.
+ * @param {object} payload - { sub, tenant_id, codigo, puesto, nivel_acceso }
+ * @returns {{ accessToken: string, refreshToken: string }}
+ */
+function generateTokenPair(payload) {
+  const accessToken = jwt.sign(payload, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn,
+  });
+
+  const refreshToken = jwt.sign(
+    { sub: payload.sub, tenant_id: payload.tenant_id, type: 'refresh', jti: crypto.randomUUID() },
+    config.jwtSecret,
+    { expiresIn: config.jwtRefreshExpiresIn }
+  );
+
+  return { accessToken, refreshToken };
+}
+
+/**
  * POST /api/auth/login
  * Body: { codigo, password, tenant_slug }
  * Public route — no auth middleware required.
  * Looks up tenant by slug, then user by codigo within that tenant.
+ * Returns an access token (short-lived) and a refresh token (long-lived).
  */
 router.post('/login', async (req, res, next) => {
   try {
@@ -66,7 +88,7 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    // --- Generate JWT ---
+    // --- Generate token pair ---
     const payload = {
       sub: user.id,
       tenant_id: tenant.id,
@@ -75,9 +97,7 @@ router.post('/login', async (req, res, next) => {
       nivel_acceso: user.nivel_acceso,
     };
 
-    const token = jwt.sign(payload, config.jwtSecret, {
-      expiresIn: config.jwtExpiresIn,
-    });
+    const { accessToken, refreshToken } = generateTokenPair(payload);
 
     // --- Update last_login_at ---
     await query(
@@ -93,8 +113,11 @@ router.post('/login', async (req, res, next) => {
     });
 
     // --- Return response ---
+    // `token` kept for backward compatibility; clients should migrate to `accessToken`
     res.json({
-      token,
+      token: accessToken,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         tenant_id: user.tenant_id,
@@ -110,6 +133,93 @@ router.post('/login', async (req, res, next) => {
         plan: tenant.plan,
         config: tenant.config,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ * Body: { refreshToken }
+ * Validates the refresh token and issues a new access + refresh token pair.
+ * The old refresh token is implicitly invalidated (rotation pattern).
+ */
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        error: { code: 'REFRESH_TOKEN_REQUIRED', message: 'refreshToken es requerido' },
+      });
+    }
+
+    // --- Verify the refresh token ---
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, config.jwtSecret);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          error: { code: 'REFRESH_TOKEN_EXPIRED', message: 'Token de refresco expirado. Inicia sesión nuevamente.' },
+        });
+      }
+      return res.status(401).json({
+        error: { code: 'REFRESH_TOKEN_INVALID', message: 'Token de refresco invalido' },
+      });
+    }
+
+    // --- Ensure it's a refresh token (not an access token) ---
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({
+        error: { code: 'INVALID_TOKEN_TYPE', message: 'Token no es de tipo refresh' },
+      });
+    }
+
+    // --- Look up user (ensure still active) ---
+    const userResult = await query(
+      'SELECT id, tenant_id, codigo, puesto, nivel_acceso FROM users WHERE id = $1 AND activo = true',
+      [decoded.sub]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        error: { code: 'USER_NOT_FOUND', message: 'Usuario no encontrado o inactivo' },
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // --- Verify tenant is still active ---
+    const tenantResult = await query(
+      'SELECT id FROM tenants WHERE id = $1 AND activo = true',
+      [decoded.tenant_id]
+    );
+
+    if (tenantResult.rows.length === 0) {
+      return res.status(401).json({
+        error: { code: 'TENANT_INACTIVE', message: 'Restaurante inactivo' },
+      });
+    }
+
+    // --- Issue new token pair (rotation) ---
+    const payload = {
+      sub: user.id,
+      tenant_id: user.tenant_id,
+      codigo: user.codigo,
+      puesto: user.puesto,
+      nivel_acceso: user.nivel_acceso,
+    };
+
+    const { accessToken, refreshToken: newRefreshToken } = generateTokenPair(payload);
+
+    logger.debug('Token refreshed', { userId: user.id, tenantId: user.tenant_id });
+
+    res.json({
+      token: accessToken,
+      accessToken,
+      refreshToken: newRefreshToken,
     });
   } catch (err) {
     next(err);

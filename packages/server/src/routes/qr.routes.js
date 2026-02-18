@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { qrGenerateSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
+import { validate } from '../middleware/validate.js';
 import { query as poolQuery } from '../db/pool.js';
 import {
   resolveQR,
@@ -41,6 +43,7 @@ router.post(
   '/generate',
   requireAuth,
   requireRole(5),
+  validate(qrGenerateSchema),
   async (req, res, next) => {
     try {
       const result = await generateQR(req.tenantClient, {

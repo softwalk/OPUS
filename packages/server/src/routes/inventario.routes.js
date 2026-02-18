@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { movimientoCreateSchema } from '@opus/shared/schemas';
+import { movimientoCreateSchema, traspasoSchema, ajusteSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
 import { validate } from '../middleware/validate.js';
@@ -175,7 +175,7 @@ router.get('/movimientos', requireAuth, async (req, res, next) => {
  * Transfer stock between almacenes.
  * Requires gerente level (nivel_acceso >= 5).
  */
-router.post('/traspaso', requireAuth, requireRole(5), async (req, res, next) => {
+router.post('/traspaso', requireAuth, requireRole(5), validate(traspasoSchema), async (req, res, next) => {
   try {
     const result = await traspasoAlmacen(req.tenantClient, {
       productoId: req.body.producto_id,
@@ -209,7 +209,7 @@ router.post('/traspaso', requireAuth, requireRole(5), async (req, res, next) => 
  * Adjust inventory based on physical count.
  * Requires gerente level (nivel_acceso >= 5).
  */
-router.post('/ajuste', requireAuth, requireRole(5), async (req, res, next) => {
+router.post('/ajuste', requireAuth, requireRole(5), validate(ajusteSchema), async (req, res, next) => {
   try {
     const result = await ajusteInventario(req.tenantClient, {
       productoId: req.body.producto_id,

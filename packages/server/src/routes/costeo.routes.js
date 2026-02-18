@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { dateRangeSchema } from '@opus/shared/schemas';
+import { dateRangeSchema, explosionBOMSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
+import { validate } from '../middleware/validate.js';
 import {
   foodCost,
   desviaciones,
@@ -65,19 +66,11 @@ router.get('/desviaciones', requireAuth, requireRole(5), async (req, res, next) 
  * Calculate total raw materials for a product batch.
  * Nivel >= 2 (cajero+).
  */
-router.post('/explosion', requireAuth, requireRole(2), async (req, res, next) => {
+router.post('/explosion', requireAuth, requireRole(2), validate(explosionBOMSchema), async (req, res, next) => {
   try {
-    const { producto_id, porciones } = req.body;
-
-    if (!producto_id) {
-      return res.status(400).json({
-        error: { code: 'VALIDATION_ERROR', message: 'Se requiere producto_id' },
-      });
-    }
-
     const result = await explosionBOM(req.tenantClient, {
-      producto_id,
-      porciones: porciones || 1,
+      producto_id: req.body.producto_id,
+      porciones: req.body.porciones,
     });
     if (result.error) return res.status(result.status).json({ error: { code: result.code, message: result.message } });
     res.json(result);

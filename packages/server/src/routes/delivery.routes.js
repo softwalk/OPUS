@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { zonaEntregaCreateSchema, zonaEntregaUpdateSchema } from '@opus/shared/schemas';
 import { requireAuth } from '../middleware/require-auth.js';
 import { requireRole } from '../middleware/require-role.js';
+import { validate } from '../middleware/validate.js';
 import {
   listZonasEntrega,
   createZonaEntrega,
@@ -31,6 +33,7 @@ router.post(
   '/zonas',
   requireAuth,
   requireRole(5),
+  validate(zonaEntregaCreateSchema),
   async (req, res, next) => {
     try {
       const result = await createZonaEntrega(req.tenantClient, {
@@ -63,6 +66,7 @@ router.put(
   '/zonas/:id',
   requireAuth,
   requireRole(5),
+  validate(zonaEntregaUpdateSchema),
   async (req, res, next) => {
     try {
       const result = await updateZonaEntrega(req.tenantClient, {
