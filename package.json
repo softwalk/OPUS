@@ -23,9 +23,16 @@
     "db:migrate": "npm run migrate -w packages/server",
     "db:seed": "npm run seed -w packages/server",
     "db:reset": "npm run db:reset -w packages/server",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "install:all": "npm install"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
+    "vitest": "^4.0.18"
   }
 }

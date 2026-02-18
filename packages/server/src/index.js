@@ -106,15 +106,45 @@ app.use(tenantMiddleware);
 // ==========================================
 // HEALTH CHECK
 // ==========================================
+
+// Lightweight liveness probe — always returns 200 if the process is running.
+// Use for Kubernetes/Docker liveness probes (no external dependencies checked).
+app.get('/api/health/live', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Readiness probe — checks all dependencies. Returns 200 when ready to serve.
+// Use for load-balancer/readiness probes and monitoring dashboards.
 app.get('/api/health', async (req, res) => {
+  const start = Date.now();
   const dbOk = await testConnection();
-  res.status(dbOk ? 200 : 503).json({
-    status: dbOk ? 'ok' : 'degraded',
+  const dbLatency = Date.now() - start;
+
+  const mem = process.memoryUsage();
+  const uptimeSeconds = process.uptime();
+
+  const checks = {
+    database: {
+      status: dbOk ? 'up' : 'down',
+      latency_ms: dbLatency,
+    },
+  };
+
+  const allUp = dbOk;
+
+  res.status(allUp ? 200 : 503).json({
+    status: allUp ? 'ok' : 'degraded',
     version: '1.0.0-opus',
     sistema: 'OPUS — Restaurant POS SaaS',
-    database: dbOk ? 'connected' : 'disconnected',
-    uptime: process.uptime(),
     env: config.env,
+    timestamp: new Date().toISOString(),
+    uptime_s: Math.floor(uptimeSeconds),
+    checks,
+    memory: {
+      rss_mb: Math.round(mem.rss / 1024 / 1024),
+      heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+      heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+    },
   });
 });
 
