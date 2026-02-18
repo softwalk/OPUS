@@ -9,6 +9,8 @@
     "./types": "./src/types/index.js",
     "./schemas": "./src/schemas/index.js",
     "./constants": "./src/constants.js",
-    "./utils/money": "./src/utils/money.js"
+    "./utils/money": "./src/utils/money.js",
+    "./utils/api-client": "./src/utils/api-client.js",
+    "./components/ErrorBoundary": "./src/components/ErrorBoundary.jsx"
   }
 }
