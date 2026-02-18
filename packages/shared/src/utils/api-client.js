@@ -91,7 +91,18 @@ class ApiClient {
       throw error;
     }
 
-    const data = await res.json();
+    // Safely parse JSON — proxy errors or network issues may return non-JSON
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      const error = new Error(
+        res.ok ? 'Respuesta invalida del servidor' : `Error del servidor (${res.status})`
+      );
+      error.status = res.status;
+      error.code = 'INVALID_RESPONSE';
+      throw error;
+    }
 
     if (!res.ok) {
       const error = new Error(data?.error?.message || 'Error del servidor');

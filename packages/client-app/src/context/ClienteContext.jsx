@@ -48,7 +48,14 @@ export function ClienteProvider({ children }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telefono, nombre, tenant_slug: TENANT_SLUG }),
     });
-    const data = await res.json();
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error('No se pudo conectar al servidor. Intenta de nuevo.');
+    }
+
     if (!res.ok) {
       throw new Error(data?.error?.message || 'Error al iniciar sesion');
     }
