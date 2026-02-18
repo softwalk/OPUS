@@ -673,50 +673,61 @@ export async function cobrar(client, {
 
     const almacenId = almacen?.id;
 
-    if (almacenId) {
-      for (const consumo of consumos) {
-        const { rows: receta } = await client.query(
-          `SELECT insumo_id, cantidad AS cant_receta FROM recetas WHERE producto_id = $1`,
-          [consumo.producto_id]
-        );
+    if (almacenId && consumos.length > 0) {
+      // Batch-fetch ALL recipes for all consumed products in one query (fixes N+1)
+      const productoIds = [...new Set(consumos.map(c => c.producto_id))];
+      const { rows: allRecipes } = await client.query(
+        `SELECT producto_id, insumo_id, cantidad AS cant_receta
+         FROM recetas
+         WHERE producto_id = ANY($1)`,
+        [productoIds]
+      );
 
+      // Group recipes by producto_id for fast lookup
+      const recipeMap = new Map();
+      for (const r of allRecipes) {
+        if (!recipeMap.has(r.producto_id)) recipeMap.set(r.producto_id, []);
+        recipeMap.get(r.producto_id).push(r);
+      }
+
+      // Aggregate total deduction per insumo_id across all consumos
+      const deductions = new Map(); // insumo_id -> total qty to deduct
+      for (const consumo of consumos) {
+        const receta = recipeMap.get(consumo.producto_id) || [];
         for (const ing of receta) {
           const cantDescontar = parseFloat(ing.cant_receta) * parseFloat(consumo.cantidad);
-
-          // SECURITY: Lock row to prevent concurrent race condition on stock
-          await client.query(
-            `SELECT id FROM existencias
-             WHERE producto_id = $1 AND almacen_id = $2
-             FOR UPDATE`,
-            [ing.insumo_id, almacenId]
-          );
-
-          // Deduct from existencias
-          await client.query(
-            `UPDATE existencias
-             SET cantidad   = cantidad - $1,
-                 updated_at = NOW()
-             WHERE producto_id = $2 AND almacen_id = $3`,
-            [cantDescontar, ing.insumo_id, almacenId]
-          );
-
-          // Log inventory movement
-          await client.query(
-            `INSERT INTO movimientos_inventario
-               (tenant_id, producto_id, almacen_id, tipo, cantidad, referencia, usuario)
-             VALUES ($1, $2, $3, 'salida_venta', $4, $5, $6)`,
-            [
-              tenantId,
-              ing.insumo_id,
-              almacenId,
-              cantDescontar,
-              `Cuenta #${cuenta.folio}`,
-              usuario,
-            ]
-          );
+          deductions.set(ing.insumo_id, (deductions.get(ing.insumo_id) || 0) + cantDescontar);
         }
       }
-    } else {
+
+      // Apply deductions per insumo (lock + update + movement log)
+      for (const [insumoId, cantDescontar] of deductions) {
+        // SECURITY: Lock row to prevent concurrent race condition on stock
+        await client.query(
+          `SELECT id FROM existencias
+           WHERE producto_id = $1 AND almacen_id = $2
+           FOR UPDATE`,
+          [insumoId, almacenId]
+        );
+
+        // Deduct from existencias
+        await client.query(
+          `UPDATE existencias
+           SET cantidad   = cantidad - $1,
+               updated_at = NOW()
+           WHERE producto_id = $2 AND almacen_id = $3`,
+          [cantDescontar, insumoId, almacenId]
+        );
+
+        // Log inventory movement
+        await client.query(
+          `INSERT INTO movimientos_inventario
+             (tenant_id, producto_id, almacen_id, tipo, cantidad, referencia, usuario)
+           VALUES ($1, $2, $3, 'salida_venta', $4, $5, $6)`,
+          [tenantId, insumoId, almacenId, cantDescontar, `Cuenta #${cuenta.folio}`, usuario]
+        );
+      }
+    } else if (!almacenId) {
       logger.warn('No almacen found for BOM explosion, inventory not deducted', { tenantId, cuentaId });
     }
 

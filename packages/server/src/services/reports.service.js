@@ -703,53 +703,39 @@ export async function explosionBOM(client, { producto_id, porciones = 1 }) {
 /**
  * Recalculate costo_unitario for all products that have recipes.
  * costo_unitario = SUM(ingrediente.costo_unitario * ingrediente.cantidad_receta) / porciones
+ *
+ * Uses a single batch UPDATE instead of N+1 queries (previously 3 queries per product).
  */
 export async function recalcularCostos(client) {
-  // Get all products with recipes
-  const { rows: productosConReceta } = await client.query(
-    `SELECT DISTINCT r.producto_id
-     FROM recetas r`
-  );
-
-  let actualizados = 0;
-
-  for (const { producto_id } of productosConReceta) {
-    // Get recipe cost
-    const { rows: [costoRow] } = await client.query(
-      `SELECT
-         COALESCE(SUM(r.cantidad * pr.costo_unitario), 0)::bigint AS costo_receta
+  // Single query: calculate cost per product and update in one shot
+  const { rowCount: actualizados } = await client.query(
+    `UPDATE productos p
+     SET costo_unitario = sub.costo_por_porcion,
+         updated_at = NOW()
+     FROM (
+       SELECT
+         r.producto_id,
+         ROUND(COALESCE(SUM(r.cantidad * pr.costo_unitario), 0) / GREATEST(p2.porciones, 1))::bigint AS costo_por_porcion
        FROM recetas r
        JOIN productos pr ON pr.id = r.insumo_id
-       WHERE r.producto_id = $1`,
-      [producto_id]
-    );
+       JOIN productos p2 ON p2.id = r.producto_id
+       GROUP BY r.producto_id, p2.porciones
+     ) sub
+     WHERE p.id = sub.producto_id
+       AND p.costo_unitario IS DISTINCT FROM sub.costo_por_porcion`
+  );
 
-    // Get porciones
-    const { rows: [prod] } = await client.query(
-      `SELECT porciones FROM productos WHERE id = $1`,
-      [producto_id]
-    );
-
-    if (prod) {
-      const costoPorPorcion = Math.round(Number(costoRow.costo_receta) / prod.porciones);
-
-      await client.query(
-        `UPDATE productos
-         SET costo_unitario = $1, updated_at = NOW()
-         WHERE id = $2 AND costo_unitario != $1`,
-        [costoPorPorcion, producto_id]
-      );
-
-      actualizados++;
-    }
-  }
+  // Count total products with recipes for the report
+  const { rows: [{ total }] } = await client.query(
+    `SELECT COUNT(DISTINCT producto_id)::integer AS total FROM recetas`
+  );
 
   logger.info('Costos recalculated', { actualizados });
 
   return {
     ok: true,
-    productos_analizados: productosConReceta.length,
-    actualizados,
+    productos_analizados: total,
+    actualizados: actualizados || 0,
   };
 }
 
