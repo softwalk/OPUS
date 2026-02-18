@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: opus-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: opus
+      POSTGRES_PASSWORD: opus_dev_2026
+      POSTGRES_DB: opus
+    volumes:
+      - opus-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: opus-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@opus.dev
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    volumes:
+      - opus-pgadmin:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  opus-pgdata:
+  opus-pgadmin:

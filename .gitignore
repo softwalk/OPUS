@@ -17,6 +17,12 @@ out/
 # Prisma generated
 platform/src/generated/
 platform/generated/
+saas-factory/platform/src/generated/
+saas-factory/platform/generated/
+
+# POS data
+pgdata/
+*.log
 
 # Build
 build/

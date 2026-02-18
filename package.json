@@ -1,0 +1,31 @@
+{
+  "name": "opus",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/admin",
+    "packages/client-app",
+    "packages/waiter-app"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w packages/server",
+    "dev:admin": "npm run dev -w packages/admin",
+    "dev:client": "npm run dev -w packages/client-app",
+    "dev:waiter": "npm run dev -w packages/waiter-app",
+    "dev:all": "npm run dev:server & npm run dev:admin & npm run dev:client & npm run dev:waiter",
+    "build:admin": "npm run build -w packages/admin",
+    "build:client": "npm run build -w packages/client-app",
+    "build:waiter": "npm run build -w packages/waiter-app",
+    "build:all": "npm run build:admin && npm run build:client && npm run build:waiter",
+    "db:migrate": "npm run migrate -w packages/server",
+    "db:seed": "npm run seed -w packages/server",
+    "db:reset": "npm run db:reset -w packages/server",
+    "install:all": "npm install"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
