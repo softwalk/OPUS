@@ -47,18 +47,21 @@ router.get('/', requireAuth, validate(paginationSchema, 'query'), async (req, re
 // ---------------------------------------------------------------------------
 
 /**
- * GET /grupos/all
+ * GET /grupos  and  GET /grupos/all
  * List all product groups.
  * Any authenticated user can view.
+ * Both paths supported: /grupos (used by admin Tablas page) and /grupos/all (legacy).
  */
-router.get('/grupos/all', requireAuth, async (req, res, next) => {
+const gruposHandler = async (req, res, next) => {
   try {
     const result = await listGrupos(req.tenantClient);
     res.json(result);
   } catch (err) {
     next(err);
   }
-});
+};
+router.get('/grupos', requireAuth, gruposHandler);
+router.get('/grupos/all', requireAuth, gruposHandler);
 
 /**
  * POST /grupos

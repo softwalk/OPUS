@@ -73,6 +73,22 @@ router.get('/formas-pago', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * GET /turnos
+ * List all turnos (shifts) for the tenant.
+ * Any authenticated user can view.
+ */
+router.get('/turnos', requireAuth, async (req, res, next) => {
+  try {
+    const { rows } = await req.tenantClient.query(
+      'SELECT * FROM turnos WHERE activo = true ORDER BY hora_inicio'
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /mesas/:id/abrir
  * Open a mesa — creates a new cuenta linked to the mesa.
  * Any authenticated user can open a mesa.
